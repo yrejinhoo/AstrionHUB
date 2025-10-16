@@ -26,7 +26,7 @@ local CONFIG = {
 	PREMIUM_WHITELIST_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/whitelist.txt",
 	DAILY_KEYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/daily.txt",
 	FREE_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/free_replays.json",
-	PREMIUM_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/premium_replays.json"
+	PREMIUM_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/AstrionReplays(Copy).json"
 }
 
 local RUNTIME_WEBHOOK_URL = CONFIG.WEBHOOK_URL
