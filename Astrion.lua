@@ -25,8 +25,8 @@ local CONFIG = {
 	WEBHOOK_URL = "https://discord.com/api/webhooks/1426724518390534274/nXOhNav-G-nin-VeRBDIPLhdN2vwmHgmYomO1Jw1Q9XTaAvi9HGJjuNvZ6wTLA5mBHsD",
 	PREMIUM_WHITELIST_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/whitelist.txt",
 	DAILY_KEYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/daily.txt",
-	FREE_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/free_replays.json",
-	PREMIUM_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/premium_replays.json"
+	FREE_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/replays/refs/heads/main/free_replays.json",
+	PREMIUM_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/replays/refs/heads/main/AstrionReplays.json"
 }
 
 local RUNTIME_WEBHOOK_URL = CONFIG.WEBHOOK_URL
