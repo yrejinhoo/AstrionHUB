@@ -1,8 +1,8 @@
 
 -- ============================================================
--- ASTRIONHUB+ - SECURED WINDUI EDITION v6.2
+-- ASTRIONHUB+ - SECURED WINDUI EDITION v6.1
 -- Features: Key System, Whitelist, Discord Webhook, Server Tools
--- Updated: Fixed Daily User Access & Tab Visibility
+-- Updated: Simplified Professional Interface
 -- ============================================================
 
 -- ============================================================
@@ -25,8 +25,8 @@ local CONFIG = {
 	WEBHOOK_URL = "https://discord.com/api/webhooks/1426724518390534274/nXOhNav-G-nin-VeRBDIPLhdN2vwmHgmYomO1Jw1Q9XTaAvi9HGJjuNvZ6wTLA5mBHsD",
 	PREMIUM_WHITELIST_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/whitelist.txt",
 	DAILY_KEYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/daily.txt",
-	FREE_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/Replays/refs/heads/main/free_replays.json",
-	PREMIUM_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/Replays/refs/heads/main/premium_replays.json"
+	FREE_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/free_replays.json",
+	PREMIUM_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/premium_replays.json"
 }
 
 local RUNTIME_WEBHOOK_URL = CONFIG.WEBHOOK_URL
@@ -133,7 +133,7 @@ local function sendWebhook(title, description, color, fields)
 			["description"] = description,
 			["color"] = color or 3447003,
 			["fields"] = fields or {},
-			["footer"] = {["text"] = "AstrionHUB+ v6.2 - Security System"},
+			["footer"] = {["text"] = "AstrionHUB+ v6.1 - Security System"},
 			["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%S")
 		}}
 	}
@@ -204,7 +204,7 @@ local function loadReplays()
 	
 	local result = {}
 	
-	-- Load free replays (available to all users)
+	-- Load free replays
 	if freeData then
 		local success, decoded = pcall(function()
 			return HttpService:JSONDecode(freeData)
@@ -226,8 +226,8 @@ local function loadReplays()
 		end
 	end
 	
-	-- Load premium replays (only for premium users)
-	if userTier == "PREMIUM" and premiumData then
+	-- Load premium replays
+	if premiumData then
 		local success, decoded = pcall(function()
 			return HttpService:JSONDecode(premiumData)
 		end)
@@ -408,7 +408,7 @@ local function createKeySystemUI()
 	
 	KeyTab:Paragraph({
 		Title = "Key Types",
-		Desc = "Premium - Full access + Premium replays 👑 + Settings save\nDaily - Full access + Free replays (24 hours)",
+		Desc = "Premium - Full access to all features + Settings save\nDaily - 24 hour access to all features",
 		Image = "key",
 		ImageSize = 20,
 		Color = "White"
@@ -520,7 +520,7 @@ if userTier == "NONE" then
 	return
 end
 
--- Load replays after authentication (this ensures Premium/Daily distinction is applied)
+-- Load replays after authentication
 savedReplays = loadReplays()
 
 -- ============================================================
@@ -894,13 +894,13 @@ local Window = WindUI:CreateWindow({
 })
 
 Window:Tag({
-    Title = "v6.2",
+    Title = "v6.1",
     Color = Color3.fromHex("#30ff6a"),
     Radius = 13,
 })
 
 -- ============================================================
--- PROFILE TAB (ALL USERS)
+-- PROFILE TAB
 -- ============================================================
 
 local ProfileTab = Window:Tab({Title = "Profile", Icon = "user"})
@@ -988,7 +988,7 @@ ProfileTab:Button({
 })
 
 -- ============================================================
--- PLAYBACK TAB (ALL USERS)
+-- PLAYBACK TAB
 -- ============================================================
 
 local PlaybackTab = Window:Tab({Title = "Playback", Icon = "play"})
@@ -1236,7 +1236,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- SERVER TAB (ALL USERS)
+-- SERVER TAB
 -- ============================================================
 
 local ServerTab = Window:Tab({Title = "Server", Icon = "globe"})
@@ -1352,7 +1352,7 @@ ServerTab:Paragraph({
 })
 
 -- ============================================================
--- SETTINGS TAB (ALL USERS)
+-- SETTINGS TAB
 -- ============================================================
 
 local SettingsTab = Window:Tab({Title = "Settings", Icon = "sliders-horizontal"})
@@ -1453,18 +1453,10 @@ if userTier == "PREMIUM" then
 		ImageSize = 20,
 		Color = "White"
 	})
-else
-	SettingsTab:Paragraph({
-		Title = "Daily Settings",
-		Desc = "Settings are not saved for Daily users.\nUpgrade to Premium for auto-save!",
-		Image = "info",
-		ImageSize = 20,
-		Color = "White"
-	})
 end
 
 -- ============================================================
--- APPEARANCE TAB (ALL USERS)
+-- APPEARANCE TAB
 -- ============================================================
 
 local AppearanceTab = Window:Tab({Title = "Appearance", Icon = "palette"})
@@ -1516,7 +1508,7 @@ AppearanceTab:Slider({
 })
 
 -- ============================================================
--- INFO TAB (ALL USERS)
+-- INFO TAB
 -- ============================================================
 
 local InfoTab = Window:Tab({Title = "Info", Icon = "info"})
@@ -1531,7 +1523,7 @@ InfoTab:Paragraph({
 
 InfoTab:Paragraph({
 	Title = "Features by Tier",
-	Desc = "DAILY: All features + Free replays (24 hours)\nPREMIUM 👑: All features + Premium replays + Settings auto-save",
+	Desc = "FREE: All features + Free replays\nPREMIUM 👑: All features + Settings auto-save + Premium replays",
 	Image = "layers",
 	ImageSize = 20,
 	Color = "White"
@@ -1539,15 +1531,15 @@ InfoTab:Paragraph({
 
 InfoTab:Paragraph({
 	Title = "About",
-	Desc = string.format("AstrionHUB+ v6.2\n\nStatus: %s\nExecutor: %s\nRoblox Premium: %s\n\nAll rights reserved", tierStatus, getExecutor(), premiumStatus),
+	Desc = string.format("AstrionHUB+ v6.1\n\nStatus: %s\nExecutor: %s\nRoblox Premium: %s\n\nAll rights reserved", tierStatus, getExecutor(), premiumStatus),
 	Image = "code",
 	ImageSize = 20,
 	Color = "White"
 })
 
 InfoTab:Paragraph({
-	Title = "Changelog v6.2",
-	Desc = "✓ Fixed: Daily users now have full access to all tabs\n✓ Fixed: Tab visibility issue resolved\n✓ Improved: Daily users get all features except premium replays\n✓ Changed: Premium advantage is now premium replays + settings save only\n✓ All users: Profile, Playback, Server, Settings, Appearance, Info tabs",
+	Title = "Changelog v6.1",
+	Desc = "✓ Removed: Toggle for Loop button\n✓ Removed: Merge & Play Selected\n✓ Removed: Play Random\n✓ Removed: Advanced Tab\n✓ Removed: Import Data\n✓ Changed: Speed now uses dropdown\n✓ Changed: Select Replay now multi-select\n✓ Changed: Icon to mountain\n✓ Improved: Simplified interface\n✓ Premium replays marked with 👑",
 	Image = "list",
 	ImageSize = 20,
 	Color = "White"
@@ -1602,7 +1594,7 @@ if userTier == "PREMIUM" then
 end
 
 -- ============================================================
--- ANTI-AFK HANDLER (ALL USERS)
+-- ANTI-AFK HANDLER
 -- ============================================================
 
 Players.LocalPlayer.Idled:Connect(function()
@@ -1619,13 +1611,13 @@ end)
 
 WindUI:Notify({
 	Title = tierStatus .. " Access",
-	Content = "AstrionHUB+ v6.2 ready\n" .. (userTier == "DAILY" and "Daily active - " .. formatTime(getRemainingDailyTime()) .. " remaining" or "All features loaded successfully") .. "\n\nRoblox Premium: " .. premiumStatus,
+	Content = "AstrionHUB+ v6.1 ready\n" .. (userTier == "DAILY" and "Daily active - " .. formatTime(getRemainingDailyTime()) .. " remaining" or "All features loaded successfully") .. "\n\nRoblox Premium: " .. premiumStatus,
 	Duration = 5,
 	Icon = userTier == "PREMIUM" and "crown" or (userTier == "DAILY" and "clock" or "check-circle")
 })
 
 print("=== LOADED SUCCESSFULLY ===")
-print("Version: 6.2 - AstrionHUB+")
+print("Version: 6.1 - AstrionHUB+")
 print("User:", player.Name)
 print("User ID:", player.UserId)
 print("Status:", tierStatus)
@@ -1635,8 +1627,8 @@ print("Roblox Premium:", premiumStatus)
 print("Replays:", #savedReplays)
 if userTier == "DAILY" then
 	print("Daily Time:", formatTime(getRemainingDailyTime()))
-	print("Features: Full access (Free replays only)")
-elseif userTier == "PREMIUM" then
-	print("Features: Full access + Premium replays + Settings save")
+end
+if userTier == "PREMIUM" then
+	print("Settings: Auto-Save Enabled")
 end
 print("===========================")
