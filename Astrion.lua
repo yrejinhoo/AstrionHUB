@@ -1,8 +1,8 @@
 
 -- ============================================================
--- ASTRIONHUB+ - SECURED WINDUI EDITION v6.1
+-- ASTRIONHUB+ - SECURED WINDUI EDITION v6.0
 -- Features: Key System, Whitelist, Discord Webhook, Server Tools
--- Updated: Simplified Professional Interface
+-- Updated: Clean Professional Interface
 -- ============================================================
 
 -- ============================================================
@@ -25,8 +25,8 @@ local CONFIG = {
 	WEBHOOK_URL = "https://discord.com/api/webhooks/1426724518390534274/nXOhNav-G-nin-VeRBDIPLhdN2vwmHgmYomO1Jw1Q9XTaAvi9HGJjuNvZ6wTLA5mBHsD",
 	PREMIUM_WHITELIST_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/whitelist.txt",
 	DAILY_KEYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/daily.txt",
-	FREE_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/replays/refs/heads/main/free_replays.json",
-	PREMIUM_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/replays/refs/heads/main/AstrionReplays.json"
+	FREE_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/free_replays.json",
+	PREMIUM_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/premium_replays.json"
 }
 
 local RUNTIME_WEBHOOK_URL = CONFIG.WEBHOOK_URL
@@ -58,6 +58,7 @@ local autoRespawn = false
 local autoHeal = false
 local antiAfkEnabled = false
 local fullBrightEnabled = false
+local intervalFlipEnabled = false
 local currentSpeed = 1
 local loopDelay = 0
 local currentReplayIndex = nil
@@ -133,7 +134,7 @@ local function sendWebhook(title, description, color, fields)
 			["description"] = description,
 			["color"] = color or 3447003,
 			["fields"] = fields or {},
-			["footer"] = {["text"] = "AstrionHUB+ v6.1 - Security System"},
+			["footer"] = {["text"] = "AstrionHUB+ v6.0 - Security System"},
 			["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%S")
 		}}
 	}
@@ -199,56 +200,31 @@ local function loadDailyKeys()
 end
 
 local function loadReplays()
-	local freeData = fetchURL(CONFIG.FREE_REPLAYS_URL)
-	local premiumData = fetchURL(CONFIG.PREMIUM_REPLAYS_URL)
+	local url = userTier == "PREMIUM" and CONFIG.PREMIUM_REPLAYS_URL or CONFIG.FREE_REPLAYS_URL
+	local data = fetchURL(url)
+	if not data then return {} end
 	
-	local result = {}
+	local success, decoded = pcall(function()
+		return HttpService:JSONDecode(data)
+	end)
 	
-	-- Load free replays
-	if freeData then
-		local success, decoded = pcall(function()
-			return HttpService:JSONDecode(freeData)
-		end)
-		
-		if success and decoded and decoded.replays then
-			for _, r in ipairs(decoded.replays) do
-				local replay = {Name = r.Name, Selected = r.Selected or false, Frames = {}, IsPremium = false}
-				for _, f in ipairs(r.Frames) do
-					table.insert(replay.Frames, {
-						Position = {f.Position[1], f.Position[2], f.Position[3]},
-						LookVector = {f.LookVector[1], f.LookVector[2], f.LookVector[3]},
-						UpVector = {f.UpVector[1], f.UpVector[2], f.UpVector[3]},
-						State = f.State
-					})
-				end
-				table.insert(result, replay)
+	if success and decoded and decoded.replays then
+		local result = {}
+		for _, r in ipairs(decoded.replays) do
+			local replay = {Name = r.Name, Selected = r.Selected or false, Frames = {}}
+			for _, f in ipairs(r.Frames) do
+				table.insert(replay.Frames, {
+					Position = {f.Position[1], f.Position[2], f.Position[3]},
+					LookVector = {f.LookVector[1], f.LookVector[2], f.LookVector[3]},
+					UpVector = {f.UpVector[1], f.UpVector[2], f.UpVector[3]},
+					State = f.State
+				})
 			end
+			table.insert(result, replay)
 		end
+		return result
 	end
-	
-	-- Load premium replays
-	if premiumData then
-		local success, decoded = pcall(function()
-			return HttpService:JSONDecode(premiumData)
-		end)
-		
-		if success and decoded and decoded.replays then
-			for _, r in ipairs(decoded.replays) do
-				local replay = {Name = r.Name .. " 👑", Selected = r.Selected or false, Frames = {}, IsPremium = true}
-				for _, f in ipairs(r.Frames) do
-					table.insert(replay.Frames, {
-						Position = {f.Position[1], f.Position[2], f.Position[3]},
-						LookVector = {f.LookVector[1], f.LookVector[2], f.LookVector[3]},
-						UpVector = {f.UpVector[1], f.UpVector[2], f.UpVector[3]},
-						State = f.State
-					})
-				end
-				table.insert(result, replay)
-			end
-		end
-	end
-	
-	return result
+	return {}
 end
 
 local function saveDailyData(startTime)
@@ -540,6 +516,16 @@ if player.Character then onCharacterAdded(player.Character) end
 local function startMovement() isMoving = true end
 local function stopMovement() isMoving = false end
 
+local function applyIntervalRotation(cf)
+	if intervalFlipEnabled then
+		local pos = cf.Position
+		local rot = cf - pos
+		local newRot = CFrame.Angles(0, math.pi, 0) * rot
+		return CFrame.new(pos) * newRot
+	end
+	return cf
+end
+
 local function walkToPosition(targetPos, token, showNotification)
 	if not humanoidRootPart or not humanoidRootPart.Parent then return false end
 	
@@ -730,6 +716,7 @@ local function playReplay(data, replayIdx)
 			local up = Vector3.new(f.UpVector[1], f.UpVector[2], f.UpVector[3])
 			
 			local targetCF = CFrame.lookAt(pos, pos + look, up)
+			targetCF = applyIntervalRotation(targetCF)
 			humanoidRootPart.CFrame = targetCF
 		end
 		
@@ -884,7 +871,7 @@ local tierIcon = userTier == "PREMIUM" and " [Premium]" or (userTier == "DAILY" 
 
 local Window = WindUI:CreateWindow({
 	Title = "AstrionHUB+" .. tierIcon,
-	Icon = "mountain",
+	Icon = "video",
 	Author = player.Name,
 	Folder = "AstrionHUBPlus",
 	Size = UDim2.fromOffset(580, 460),
@@ -894,7 +881,7 @@ local Window = WindUI:CreateWindow({
 })
 
 Window:Tag({
-    Title = "v6.1",
+    Title = "v6.0",
     Color = Color3.fromHex("#30ff6a"),
     Radius = 13,
 })
@@ -1005,120 +992,63 @@ ReplayDropdown = PlaybackTab:Dropdown({
 	Title = "Select Replay",
 	Values = getReplayOptions(),
 	Value = "",
-	Multi = true,
-	AllowNone = true,
-	Callback = function(Values)
-		-- Clear all selections first
-		for _, r in ipairs(savedReplays) do
-			r.Selected = false
-		end
-		
-		-- Set new selections
-		if Values and type(Values) == "table" then
-			for _, value in ipairs(Values) do
-				local index = tonumber(value:match("^(%d+)%."))
-				if index and savedReplays[index] then
-					savedReplays[index].Selected = true
-				end
-			end
-		end
-		
-		-- Update SelectedReplayIndex to first selected
-		SelectedReplayIndex = nil
-		for i, r in ipairs(savedReplays) do
-			if r.Selected then
-				SelectedReplayIndex = i
-				break
-			end
-		end
-	end
-})
-
-PlaybackTab:Dropdown({
-	Title = "Speed",
-	Values = {"0.5x", "0.75x", "1x", "1.25x", "1.5x", "2x", "3x", "5x", "10x"},
-	Value = "1x",
 	Multi = false,
 	AllowNone = false,
 	Callback = function(Value)
-		local speedMap = {
-			["0.5x"] = 0.5,
-			["0.75x"] = 0.75,
-			["1x"] = 1,
-			["1.25x"] = 1.25,
-			["1.5x"] = 1.5,
-			["2x"] = 2,
-			["3x"] = 3,
-			["5x"] = 5,
-			["10x"] = 10
-		}
-		currentSpeed = speedMap[Value] or 1
-		WindUI:Notify({Title = "Speed", Content = Value, Duration = 1, Icon = "gauge"})
-	end
-})
-
-PlaybackTab:Toggle({
-	Title = "Auto Loop",
-	Desc = "Loop selected replays continuously",
-	Icon = "repeat",
-	Type = "Checkbox",
-	Default = false,
-	Callback = function(Value)
-		autoLoop = Value
 		if Value then
-			if not anySelected() then
-				WindUI:Notify({Title = "No Selection", Content = "Please select replays first", Duration = 3, Icon = "circle-alert"})
-				autoLoop = false
-				return
-			end
-			task.spawn(playLooped)
-			WindUI:Notify({Title = "Auto Loop", Content = "Auto loop started", Duration = 2, Icon = "repeat"})
+			local index = tonumber(Value:match("^(%d+)%."))
+			SelectedReplayIndex = (index and savedReplays[index]) and index or nil
 		else
-			currentReplayIndex = nil
-			if activeStop then activeStop() end
-			currentReplayToken = nil
-			WindUI:Notify({Title = "Auto Loop", Content = "Auto loop stopped", Duration = 2, Icon = "square"})
+			SelectedReplayIndex = nil
 		end
-	end
-})
-
-PlaybackTab:Slider({
-	Title = "Loop Delay (seconds)",
-	Desc = "Delay between loops",
-	Step = 1,
-	Value = {Min = 0, Max = 60, Default = 0},
-	Callback = function(value) 
-		loopDelay = value 
-		WindUI:Notify({Title = "Loop Delay", Content = value .. " seconds", Duration = 1, Icon = "clock"})
 	end
 })
 
 PlaybackTab:Button({
-	Title = "Start",
+	Title = "Play Selected",
 	Icon = "play",
 	Callback = function()
-		if not anySelected() then
-			WindUI:Notify({Title = "No Selection", Content = "Select replays first", Duration = 2, Icon = "circle-alert"})
-			return
-		end
-		
-		if autoLoop then
-			WindUI:Notify({Title = "Already Running", Content = "Auto loop is active", Duration = 2, Icon = "info"})
-			return
-		end
-		
-		local selectedReplays = {}
-		for _, r in ipairs(savedReplays) do
-			if r.Selected then table.insert(selectedReplays, r) end
-		end
-		
-		if #selectedReplays > 0 then
-			local replay = selectedReplays[1]
-			local originalIdx = table.find(savedReplays, replay)
-			task.spawn(function() playReplay(replay.Frames, originalIdx) end)
+		if SelectedReplayIndex and savedReplays[SelectedReplayIndex] then
+			local replay = savedReplays[SelectedReplayIndex]
+			task.spawn(function() playReplay(replay.Frames, SelectedReplayIndex) end)
 			WindUI:Notify({Title = "Playing", Content = replay.Name, Duration = 2, Icon = "play"})
+		else
+			WindUI:Notify({Title = "No Selection", Content = "Select replay", Duration = 2, Icon = "circle-alert"})
 		end
 	end
+})
+
+PlaybackTab:Toggle({
+	Title = "Toggle for Loop",
+	Icon = "repeat",
+	Type = "Checkbox",
+	Default = false,
+	Callback = function(Value)
+		if SelectedReplayIndex and savedReplays[SelectedReplayIndex] then
+			savedReplays[SelectedReplayIndex].Selected = Value
+			WindUI:Notify({Title = Value and "Added" or "Removed", Content = savedReplays[SelectedReplayIndex].Name, Duration = 2, Icon = Value and "check" or "x"})
+		else
+			WindUI:Notify({Title = "No Selection", Content = "Select replay", Duration = 2, Icon = "circle-alert"})
+		end
+	end
+})
+
+PlaybackTab:Button({
+	Title = "Refresh Replays",
+	Icon = "refresh-cw",
+	Callback = function()
+		savedReplays = loadReplays()
+		SelectedReplayIndex = nil
+		updateReplayDropdown()
+		WindUI:Notify({Title = "Refreshed", Content = "Loaded " .. #savedReplays .. " replays", Duration = 2, Icon = "refresh-cw"})
+	end
+})
+
+PlaybackTab:Slider({
+	Title = "Speed",
+	Step = 0.1,
+	Value = {Min = 0.1, Max = 10, Default = 1},
+	Callback = function(value) currentSpeed = value end
 })
 
 PlaybackTab:Button({
@@ -1150,6 +1080,70 @@ PlaybackTab:Button({
 		isPaused = false
 		pausedPosition = nil
 		WindUI:Notify({Title = "Stopped", Content = "Stopped", Duration = 2, Icon = "stop-circle"})
+	end
+})
+
+PlaybackTab:Button({
+	Title = "Merge & Play Selected",
+	Icon = "layers",
+	Callback = function()
+		local merged = {}
+		for _, r in ipairs(savedReplays) do
+			if r.Selected then
+				for _, f in ipairs(r.Frames) do table.insert(merged, f) end
+			end
+		end
+		if #merged > 0 then
+			task.spawn(function() playReplay(merged) end)
+		else
+			WindUI:Notify({Title = "No Selection", Content = "Select replays", Duration = 2, Icon = "circle-alert"})
+		end
+	end
+})
+
+PlaybackTab:Button({
+	Title = "Play Random",
+	Icon = "shuffle",
+	Callback = function()
+		if #savedReplays > 0 then
+			local randomIdx = math.random(1, #savedReplays)
+			local replay = savedReplays[randomIdx]
+			task.spawn(function() playReplay(replay.Frames, randomIdx) end)
+			WindUI:Notify({Title = "Random", Content = "Playing: " .. replay.Name, Duration = 3, Icon = "shuffle"})
+		else
+			WindUI:Notify({Title = "No Replays", Content = "No replays available", Duration = 2, Icon = "circle-alert"})
+		end
+	end
+})
+
+PlaybackTab:Toggle({
+	Title = "Auto Loop",
+	Desc = "Loop selected replays (stops on death)",
+	Icon = "repeat",
+	Type = "Checkbox",
+	Default = false,
+	Callback = function(Value)
+		autoLoop = Value
+		if Value then
+			task.spawn(playLooped)
+			WindUI:Notify({Title = "Auto Loop", Content = "Auto loop started", Duration = 2, Icon = "repeat"})
+		else
+			currentReplayIndex = nil
+			if activeStop then activeStop() end
+			currentReplayToken = nil
+			WindUI:Notify({Title = "Auto Loop", Content = "Auto loop stopped", Duration = 2, Icon = "square"})
+		end
+	end
+})
+
+PlaybackTab:Slider({
+	Title = "Loop Delay (seconds)",
+	Desc = "Delay between loops",
+	Step = 1,
+	Value = {Min = 0, Max = 60, Default = 0},
+	Callback = function(value) 
+		loopDelay = value 
+		WindUI:Notify({Title = "Loop Delay", Content = value .. " seconds", Duration = 1, Icon = "clock"})
 	end
 })
 
@@ -1187,36 +1181,15 @@ PlaybackTab:Toggle({
 	end
 })
 
-PlaybackTab:Button({
-	Title = "Refresh Replays",
-	Icon = "refresh-cw",
-	Callback = function()
-		savedReplays = loadReplays()
-		SelectedReplayIndex = nil
-		updateReplayDropdown()
-		WindUI:Notify({Title = "Refreshed", Content = "Loaded " .. #savedReplays .. " replays", Duration = 2, Icon = "refresh-cw"})
-	end
-})
-
 local function getReplayStats()
 	if #savedReplays == 0 then return "No replays" end
 	local totalFrames = 0
 	local selectedCount = 0
-	local freeCount = 0
-	local premiumCount = 0
-	
 	for _, replay in ipairs(savedReplays) do
 		totalFrames = totalFrames + #replay.Frames
 		if replay.Selected then selectedCount = selectedCount + 1 end
-		if replay.IsPremium then
-			premiumCount = premiumCount + 1
-		else
-			freeCount = freeCount + 1
-		end
 	end
-	
-	return string.format("Total: %d (Free: %d, Premium: %d 👑)\nSelected: %d\nTotal Frames: %d", 
-		#savedReplays, freeCount, premiumCount, selectedCount, totalFrames)
+	return string.format("Total: %d\nSelected: %d\nFrames: %d", #savedReplays, selectedCount, totalFrames)
 end
 
 local StatsParagraph = PlaybackTab:Paragraph({
@@ -1352,6 +1325,43 @@ ServerTab:Paragraph({
 })
 
 -- ============================================================
+-- ADVANCED TAB
+-- ============================================================
+
+local AdvancedTab = Window:Tab({Title = "Advanced", Icon = "settings"})
+
+AdvancedTab:Paragraph({
+	Title = "Advanced Features",
+	Desc = "Advanced movement options",
+	Image = "sliders-horizontal",
+	ImageSize = 20,
+	Color = "White"
+})
+
+AdvancedTab:Toggle({
+	Title = "Interval Flip",
+	Desc = "Flip character rotation",
+	Icon = "rotate-cw",
+	Type = "Checkbox",
+	Default = false,
+	Callback = function(Value) 
+		intervalFlipEnabled = Value
+		WindUI:Notify({
+			Title = Value and "Enabled" or "Disabled", 
+			Content = "Interval flip " .. (Value and "enabled" or "disabled"), 
+			Duration = 2, 
+			Icon = "rotate-cw"
+		})
+		
+		if userTier == "PREMIUM" then
+			local settings = loadSettings()
+			settings.intervalFlipEnabled = Value
+			saveSettings(settings)
+		end
+	end
+})
+
+-- ============================================================
 -- SETTINGS TAB
 -- ============================================================
 
@@ -1445,10 +1455,30 @@ SettingsTab:Button({
 	end
 })
 
+SettingsTab:Button({
+	Title = "Import Data",
+	Icon = "clipboard",
+	Callback = function()
+		if getclipboard then
+			local success, data = pcall(function() return HttpService:JSONDecode(getclipboard()) end)
+			if success and type(data) == "table" then
+				savedReplays = data
+				SelectedReplayIndex = nil
+				updateReplayDropdown()
+				WindUI:Notify({Title = "Imported", Content = #savedReplays .. " replays imported", Duration = 3, Icon = "check-circle"})
+			else
+				WindUI:Notify({Title = "Failed", Content = "Invalid format", Duration = 3, Icon = "circle-alert"})
+			end
+		else
+			WindUI:Notify({Title = "Error", Content = "Clipboard unavailable", Duration = 3, Icon = "circle-alert"})
+		end
+	end
+})
+
 if userTier == "PREMIUM" then
 	SettingsTab:Paragraph({
 		Title = "Premium Settings",
-		Desc = "Settings are automatically saved for Premium users 👑",
+		Desc = "Settings are automatically saved for Premium users",
 		Image = "crown",
 		ImageSize = 20,
 		Color = "White"
@@ -1515,7 +1545,7 @@ local InfoTab = Window:Tab({Title = "Info", Icon = "info"})
 
 InfoTab:Paragraph({
 	Title = "Quick Guide",
-	Desc = "1. Select replay(s) from the dropdown (multi-select)\n2. Click 'Start' to play selected replays\n3. Enable 'Auto Loop' to continuously play selected replays\n4. Use 'Pause/Resume' - character walks back if moved during pause\n5. Adjust speed using the speed dropdown",
+	Desc = "1. Select a replay from the dropdown\n2. Click 'Play Selected' to replay\n3. Use 'Toggle for Loop' to add to loop queue\n4. Enable 'Auto Loop' to continuously play selected replays\n5. Use Pause - character walks back if moved during pause",
 	Image = "book-open",
 	ImageSize = 20,
 	Color = "White"
@@ -1523,7 +1553,7 @@ InfoTab:Paragraph({
 
 InfoTab:Paragraph({
 	Title = "Features by Tier",
-	Desc = "FREE: All features + Free replays\nPREMIUM 👑: All features + Settings auto-save + Premium replays",
+	Desc = "Premium: Full access + Settings save + Premium replays\nDaily: Full access for 24 hours + Free replays",
 	Image = "layers",
 	ImageSize = 20,
 	Color = "White"
@@ -1531,15 +1561,15 @@ InfoTab:Paragraph({
 
 InfoTab:Paragraph({
 	Title = "About",
-	Desc = string.format("AstrionHUB+ v6.1\n\nStatus: %s\nExecutor: %s\nRoblox Premium: %s\n\nAll rights reserved", tierStatus, getExecutor(), premiumStatus),
+	Desc = string.format("AstrionHUB+ v6.0\n\nStatus: %s\nExecutor: %s\nRoblox Premium: %s\n\nAll rights reserved", tierStatus, getExecutor(), premiumStatus),
 	Image = "code",
 	ImageSize = 20,
 	Color = "White"
 })
 
 InfoTab:Paragraph({
-	Title = "Changelog v6.1",
-	Desc = "✓ Removed: Toggle for Loop button\n✓ Removed: Merge & Play Selected\n✓ Removed: Play Random\n✓ Removed: Advanced Tab\n✓ Removed: Import Data\n✓ Changed: Speed now uses dropdown\n✓ Changed: Select Replay now multi-select\n✓ Changed: Icon to mountain\n✓ Improved: Simplified interface\n✓ Premium replays marked with 👑",
+	Title = "Changelog v6.0",
+	Desc = "Professional clean interface\nDaily key system (24 hours)\nPremium settings auto-save\nFree and Premium replay system\nRemoved recording features\nStreamlined UI structure\nImproved performance\nEnhanced security",
 	Image = "list",
 	ImageSize = 20,
 	Color = "White"
@@ -1584,9 +1614,13 @@ if userTier == "PREMIUM" then
 			end
 		end
 		
+		if settings.intervalFlipEnabled ~= nil then
+			intervalFlipEnabled = settings.intervalFlipEnabled
+		end
+		
 		WindUI:Notify({
 			Title = "Settings Loaded",
-			Content = "Your saved settings have been restored 👑",
+			Content = "Your saved settings have been restored",
 			Duration = 3,
 			Icon = "check-circle"
 		})
@@ -1611,13 +1645,13 @@ end)
 
 WindUI:Notify({
 	Title = tierStatus .. " Access",
-	Content = "AstrionHUB+ v6.1 ready\n" .. (userTier == "DAILY" and "Daily active - " .. formatTime(getRemainingDailyTime()) .. " remaining" or "All features loaded successfully") .. "\n\nRoblox Premium: " .. premiumStatus,
+	Content = "AstrionHUB+ v6.0 ready\n" .. (userTier == "DAILY" and "Daily active - " .. formatTime(getRemainingDailyTime()) .. " remaining" or "All features loaded successfully") .. "\n\nRoblox Premium: " .. premiumStatus,
 	Duration = 5,
 	Icon = userTier == "PREMIUM" and "crown" or (userTier == "DAILY" and "clock" or "check-circle")
 })
 
 print("=== LOADED SUCCESSFULLY ===")
-print("Version: 6.1 - AstrionHUB+")
+print("Version: 6.0 - AstrionHUB+")
 print("User:", player.Name)
 print("User ID:", player.UserId)
 print("Status:", tierStatus)
