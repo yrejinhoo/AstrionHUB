@@ -32,15 +32,15 @@ WindUI:AddTheme({
 -- WINDOW PROCESS
 -------------------------------------------------------------
 local Window = WindUI:CreateWindow({
-    Title = "AstrionHUB | MOUNT YAHAYUK",
+    Title = "RullzsyHUB | MOUNT YAHAYUK",
     Icon = "lucide:braces",
-    Author = "by Jinho",
+    Author = "by RullzsyHUB",
     Folder = "RullzsyHUB_MountYahayuk",
     Size = UDim2.fromOffset(580, 460),
     MinSize = Vector2.new(560, 350),
     MaxSize = Vector2.new(850, 560),
     Transparent = true,
-    Theme = "AstrionHUB Theme",
+    Theme = "RullzsyHUB Theme",
     Resizable = true,
     SideBarWidth = 200,
     BackgroundImageTransparency = 0.42,
@@ -81,7 +81,7 @@ if not isfolder(jsonFolder) then
 end
 
 -- Server URL and JSON checkpoint file list
-local baseURL = "https://raw.githubusercontent.com/syannnho/Replays/refs/heads/main/yahayuk"
+local baseURL = "https://raw.githubusercontent.com/RullzsyHUB/roblox-scripts-json/refs/heads/main/json_mount_yahayuk_v1/"
 local jsonFiles = {
     "spawnpoint_jalur_1.json",
     "spawnpoint_jalur_2.json",
@@ -1157,7 +1157,7 @@ local SCPToggle = AutoWalkTab:Toggle({
     Default = false,
     Callback = function(Value)
         if Value then
-            playSingleCheckpointFile("spawnpoint_jalur_1.json", 1)
+            playSingleCheckpointFile("spawnpoint_jalur_1", 1)
         else
             autoLoopEnabled = false
             isManualMode = false
@@ -1166,35 +1166,6 @@ local SCPToggle = AutoWalkTab:Toggle({
     end,
 })
 
-local SCPToggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Spawnpoint Route 2)",
-    Desc = "Walk from spawnpoint Route 2",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("spawnpoint_jalur_2.json", 2)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
-
-local SCPToggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Spawnpoint Route 3)",
-    Desc = "Walk from spawnpoint Route 3",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("spawnpoint_jalur_3.json", 3)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
 -- Checkpoint 1 Toggle
 local CP1Toggle = AutoWalkTab:Toggle({
     Title = "Auto Walk (Checkpoint 1)",
@@ -1202,7 +1173,7 @@ local CP1Toggle = AutoWalkTab:Toggle({
     Default = false,
     Callback = function(Value)
         if Value then
-            playSingleCheckpointFile("checkpoint_1.json", 4)
+            playSingleCheckpointFile("checkpoint_1.json", 2)
         else
             autoLoopEnabled = false
             isManualMode = false
@@ -1218,7 +1189,7 @@ local CP2Toggle = AutoWalkTab:Toggle({
     Default = false,
     Callback = function(Value)
         if Value then
-            playSingleCheckpointFile("checkpoint_2.json", 5)
+            playSingleCheckpointFile("checkpoint_2.json", 3)
         else
             autoLoopEnabled = false
             isManualMode = false
@@ -1234,7 +1205,7 @@ local CP3Toggle = AutoWalkTab:Toggle({
     Default = false,
     Callback = function(Value)
         if Value then
-            playSingleCheckpointFile("checkpoint_3.json", 6)
+            playSingleCheckpointFile("checkpoint_3.json", 4)
         else
             autoLoopEnabled = false
             isManualMode = false
@@ -1245,27 +1216,12 @@ local CP3Toggle = AutoWalkTab:Toggle({
 
 -- Checkpoint 4 Toggle
 local CP4Toggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 4 Route 1)",
-    Desc = "Walk from checkpoint 4 Route 1",
+    Title = "Auto Walk (Checkpoint 4)",
+    Desc = "Walk from checkpoint 4",
     Default = false,
     Callback = function(Value)
         if Value then
-            playSingleCheckpointFile("checkpoint_4_jalur_1.json", 7)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
-
-local CP4Toggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 4 Route 2)",
-    Desc = "Walk from checkpoint 4 route 2",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("checkpoint_4_jalur_2.json", 8)
+            playSingleCheckpointFile("checkpoint_4.json", 5)
         else
             autoLoopEnabled = false
             isManualMode = false
@@ -1281,7 +1237,7 @@ local CP5Toggle = AutoWalkTab:Toggle({
     Default = false,
     Callback = function(Value)
         if Value then
-            playSingleCheckpointFile("checkpoint_5.json", 9)
+            playSingleCheckpointFile("checkpoint_5.json", 6)
         else
             autoLoopEnabled = false
             isManualMode = false
