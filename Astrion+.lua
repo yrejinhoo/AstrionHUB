@@ -1,2493 +1,1816 @@
--- ============================================================
--- ASTRIONHUB+ - SECURED WINDUI EDITION v1.0.7
--- Features: Key System, Whitelist, Discord Webhook, Server Tools
--- Updated: Fixed Checkpoint Position Save System
--- ============================================================
 
--- ============================================================
--- ANTI-DETECTION INITIALIZATION
--- ============================================================
-
-local cloneref = cloneref or function(obj) return obj end
-local getrawmetatable = getrawmetatable or function() return {} end
-local setreadonly = setreadonly or function() end
-local newcclosure = newcclosure or function(f) return f end
-local hookmetamethod = hookmetamethod or function() end
-local hookfunction = hookfunction or function() end
-local getnamecallmethod = getnamecallmethod or function() return "" end
-
--- ============================================================
--- CONFIGURATION
--- ============================================================
-
-local CONFIG = {
-	WEBHOOK_URL = "https://discord.com/api/webhooks/1426724518390534274/nXOhNav-G-nin-VeRBDIPLhdN2vwmHgmYomO1Jw1Q9XTaAvi9HGJjuNvZ6wTLA5mBHsD",
-	PREMIUM_WHITELIST_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/whitelist.txt",
-	DAILY_KEYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/daily.txt",
-	FREE_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/free_replays.json",
-	PREMIUM_REPLAYS_URL = "https://raw.githubusercontent.com/yrejinhoo/key/refs/heads/main/AstrionReplays.json"
-}
-
-local RUNTIME_WEBHOOK_URL = CONFIG.WEBHOOK_URL
-
--- ============================================================
--- SAFE SERVICE ACCESS
--- ============================================================
-
-local Players = cloneref(game:GetService("Players"))
-local HttpService = cloneref(game:GetService("HttpService"))
-local RunService = cloneref(game:GetService("RunService"))
-local UserInputService = cloneref(game:GetService("UserInputService"))
-local TeleportService = cloneref(game:GetService("TeleportService"))
-local lighting = cloneref(game:GetService("Lighting"))
-local Workspace = cloneref(game:GetService("Workspace"))
-local player = Players.LocalPlayer
-
-local DAILY_DATA_FILE = "AstrionDailyData.json"
-local SETTINGS_FILE = "AstrionSettings.json"
-local POSITION_SAVE_FILE = "AstrionPositionSave.json"
-local userTier = "NONE"
-local dailyStartTime = nil
-local dailyDuration = 86400
-local character = nil
-local humanoidRootPart = nil
-local isPaused = false
-local currentReplayToken = nil
-local autoLoop = false
-local activeStop = nil
-local autoRespawn = false
-local autoHeal = false
-local antiAfkEnabled = false
-local fullBrightEnabled = false
-local intervalFlipEnabled = false
-local currentSpeed = 1
-local loopDelay = 0
-local currentReplayIndex = nil
-local currentFrameIndex = 1
-local isMoving = false
-local animConn = nil
-local SelectedReplayIndex = nil
-local ReplayDropdown = nil
-local movementToken = nil
-local pausedPosition = nil
-local savedReplays = {}
-local autoLoopSelectedActive = false
-
--- Checkpoint Detection Variables
-local autoDetectCheckpoint = false
-local cpBeamVisual = false
-local delayAfterCheckpoint = 2
-local cpDetectionRadius = 50
-local cpKeyword = "Checkpoint"
-local currentBeam = nil
-local isWalkingToCheckpoint = false
-local lastPausedFrameIndex = 1
-local cpDetectionActive = false
-local checkpointsReached = {}
-
--- Premium Position Save Variables (UPDATED)
-local savedPosition = nil
-local savedJobId = nil
-local savedPlaceId = nil
-local InfoTabPositionParagraph = nil
-local lastCheckpointReached = nil  -- NEW: Store last checkpoint reached
-local lastCheckpointPosition = nil  -- NEW: Store checkpoint position
-
--- Save original lighting
-local originalLighting = {
-	Ambient = lighting.Ambient,
-	Brightness = lighting.Brightness,
-	ColorShift_Bottom = lighting.ColorShift_Bottom,
-	ColorShift_Top = lighting.ColorShift_Top,
-	OutdoorAmbient = lighting.OutdoorAmbient,
-	ClockTime = lighting.ClockTime,
-	FogEnd = lighting.FogEnd,
-	FogStart = lighting.FogStart,
-	GlobalShadows = lighting.GlobalShadows
-}
-
--- ============================================================
--- UTILITY FUNCTIONS
--- ============================================================
-
-local function getExecutor()
-	local executors = {
-		["Synapse X"] = syn and "Synapse X",
-		["Script-Ware"] = SCRIPT_WARE_VERSION and "Script-Ware",
-		["Krnl"] = KRNL_LOADED and "Krnl",
-		["Fluxus"] = fluxus and "Fluxus",
-		["Electron"] = iselectron and "Electron",
-		["Sentinel"] = SENTINEL_V2 and "Sentinel",
-		["Protosmasher"] = is_protosmasher_caller and "Protosmasher",
-		["Sirhurt"] = is_sirhurt_closure and "Sirhurt",
-		["Arceus X"] = Arceus and "Arceus X",
-		["Delta"] = identifyexecutor and identifyexecutor():find("Delta") and "Delta",
-		["Codex"] = identifyexecutor and identifyexecutor():find("Codex") and "Codex",
-		["Xeno"] = XENO_LOADED and "Xeno",
-		["Xeno Executor"] = identifyexecutor and identifyexecutor():find("Xeno") and "Xeno Executor"
-	}
-	
-	if identifyexecutor then
-		local execName = identifyexecutor()
-		return execName
-	end
-	
-	for name, check in pairs(executors) do
-		if check then return name end
-	end
-	
-	return "Unknown Executor"
-end
-
-local function isPremiumMember()
-	local premium = false
-	pcall(function()
-		premium = player.MembershipType == Enum.MembershipType.Premium
-	end)
-	return premium
-end
-
-local function sendWebhook(title, description, color, fields)
-	local webhookURL = RUNTIME_WEBHOOK_URL
-	if not webhookURL or webhookURL == "" then return false end
-	
-	local embed = {
-		["embeds"] = {{
-			["title"] = title,
-			["description"] = description,
-			["color"] = color or 3447003,
-			["fields"] = fields or {},
-			["footer"] = {["text"] = "AstrionHUB+ v1.0.7 - Security System"},
-			["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%S")
-		}}
-	}
-	
-	local jsonData = HttpService:JSONEncode(embed)
-	
-	local methods = {
-		{name = "request", func = request},
-		{name = "http_request", func = http_request},
-		{name = "syn.request", func = syn and syn.request},
-	}
-	
-	for _, method in ipairs(methods) do
-		if method.func then
-			local ok, result = pcall(function()
-				return method.func({
-					Url = webhookURL,
-					Method = "POST",
-					Headers = {["Content-Type"] = "application/json"},
-					Body = jsonData
-				})
-			end)
-			
-			if ok and result then
-				local statusCode = result.StatusCode or result.status_code or 0
-				if statusCode >= 200 and statusCode < 300 then
-					return true
-				end
-			end
-		end
-	end
-	
-	return false
-end
-
-local function fetchURL(url)
-	local success, result = pcall(function()
-		return game:HttpGet(url)
-	end)
-	return success and result or nil
-end
-
-local function loadPremiumWhitelist()
-	local data = fetchURL(CONFIG.PREMIUM_WHITELIST_URL)
-	if not data then return {} end
-	local whitelist = {}
-	for id in data:gmatch("[^\r\n]+") do
-		local userId = tonumber(id:match("%d+"))
-		if userId then table.insert(whitelist, userId) end
-	end
-	return whitelist
-end
-
-local function loadDailyKeys()
-	local data = fetchURL(CONFIG.DAILY_KEYS_URL)
-	if not data then return {} end
-	local keys = {}
-	for key in data:gmatch("[^\r\n]+") do
-		local trimmed = key:match("^%s*(.-)%s*$")
-		if trimmed ~= "" then table.insert(keys, trimmed) end
-	end
-	return keys
-end
-
-local function loadReplays()
-	local url = userTier == "PREMIUM" and CONFIG.PREMIUM_REPLAYS_URL or CONFIG.FREE_REPLAYS_URL
-	local data = fetchURL(url)
-	if not data then return {} end
-	
-	local success, decoded = pcall(function()
-		return HttpService:JSONDecode(data)
-	end)
-	
-	if success and decoded and decoded.replays then
-		local result = {}
-		for _, r in ipairs(decoded.replays) do
-			local replay = {Name = r.Name, Selected = r.Selected or false, Frames = {}}
-			for _, f in ipairs(r.Frames) do
-				table.insert(replay.Frames, {
-					Position = {f.Position[1], f.Position[2], f.Position[3]},
-					LookVector = {f.LookVector[1], f.LookVector[2], f.LookVector[3]},
-					UpVector = {f.UpVector[1], f.UpVector[2], f.UpVector[3]},
-					State = f.State
-				})
-			end
-			table.insert(result, replay)
-		end
-		return result
-	end
-	return {}
-end
-
-local function saveDailyData(startTime)
-	if writefile then
-		local data = {
-			userId = player.UserId,
-			startTime = startTime,
-			duration = dailyDuration
-		}
-		pcall(function()
-			writefile(DAILY_DATA_FILE, HttpService:JSONEncode(data))
-		end)
-	end
-end
-
-local function loadDailyData()
-	if readfile and isfile and isfile(DAILY_DATA_FILE) then
-		local success, content = pcall(function()
-			return readfile(DAILY_DATA_FILE)
-		end)
-		if success and content then
-			local data = HttpService:JSONDecode(content)
-			if data and data.userId == player.UserId then
-				return data.startTime, data.duration
-			end
-		end
-	end
-	return nil, nil
-end
-
-local function getRemainingDailyTime()
-	if not dailyStartTime then return 0 end
-	local elapsed = os.time() - dailyStartTime
-	local remaining = dailyDuration - elapsed
-	return math.max(0, remaining)
-end
-
-local function formatTime(seconds)
-	local hours = math.floor(seconds / 3600)
-	local mins = math.floor((seconds % 3600) / 60)
-	local secs = seconds % 60
-	return string.format("%02d:%02d:%02d", hours, mins, secs)
-end
-
-local function saveSettings(settings)
-	if userTier ~= "PREMIUM" then return end
-	if writefile then
-		pcall(function()
-			writefile(SETTINGS_FILE, HttpService:JSONEncode(settings))
-		end)
-	end
-end
-
-local function loadSettings()
-	if userTier ~= "PREMIUM" then return {} end
-	if readfile and isfile and isfile(SETTINGS_FILE) then
-		local success, content = pcall(function()
-			return readfile(SETTINGS_FILE)
-		end)
-		if success and content then
-			return HttpService:JSONDecode(content)
-		end
-	end
-	return {}
-end
-
--- UPDATED: Save position with checkpoint info
-local function savePositionData()
-	if userTier ~= "PREMIUM" then return end
-	if not writefile or not humanoidRootPart then return end
-	
-	local posData = {
-		userId = player.UserId,
-		jobId = game.JobId,
-		placeId = game.PlaceId,
-		position = {
-			humanoidRootPart.Position.X,
-			humanoidRootPart.Position.Y,
-			humanoidRootPart.Position.Z
-		},
-		replayIndex = currentReplayIndex,
-		frameIndex = currentFrameIndex,
-		timestamp = os.time(),
-		-- NEW: Save last checkpoint info
-		lastCheckpoint = lastCheckpointReached and {
-			name = lastCheckpointReached.Name,
-			position = {
-				lastCheckpointPosition.X,
-				lastCheckpointPosition.Y,
-				lastCheckpointPosition.Z
-			}
-		} or nil
-	}
-	
-	pcall(function()
-		writefile(POSITION_SAVE_FILE, HttpService:JSONEncode(posData))
-	end)
-end
-
-local function loadPositionData()
-	if userTier ~= "PREMIUM" then return nil end
-	if not readfile or not isfile or not isfile(POSITION_SAVE_FILE) then return nil end
-	
-	local success, content = pcall(function()
-		return readfile(POSITION_SAVE_FILE)
-	end)
-	
-	if success and content then
-		local data = HttpService:JSONDecode(content)
-		if data and data.userId == player.UserId and data.placeId == game.PlaceId then
-			return data
-		end
-	end
-	return nil
-end
-
-local function updatePositionInfo()
-	if not InfoTabPositionParagraph then return end
-	
-	local posData = loadPositionData()
-	if posData then
-		local replayName = "Unknown"
-		if posData.replayIndex and savedReplays[posData.replayIndex] then
-			replayName = savedReplays[posData.replayIndex].Name
-		end
-		
-		local checkpointInfo = ""
-		if posData.lastCheckpoint then
-			checkpointInfo = string.format("\nLast Checkpoint: %s", posData.lastCheckpoint.name)
-		else
-			checkpointInfo = "\nCheckpoint: Not reached yet"
-		end
-		
-		local serverMatch = posData.jobId == game.JobId
-		local serverStatus = serverMatch and "✓ Same Server" or "✗ Different Server"
-		
-		local desc = string.format(
-			"Saved Position Found!\n\nReplay: %s\nFrame: %d%s\nPosition: %.1f, %.1f, %.1f\nServer: %s\n\n%s",
-			replayName,
-			posData.frameIndex or 1,
-			checkpointInfo,
-			posData.position[1], posData.position[2], posData.position[3],
-			serverStatus,
-			serverMatch and "Click 'Start' to continue from this position" or "Rejoin same server to continue"
-		)
-		
-		pcall(function()
-			InfoTabPositionParagraph:SetDesc(desc)
-		end)
-	else
-		pcall(function()
-			InfoTabPositionParagraph:SetDesc("No saved position for this game\n\nPlay a replay to save your progress automatically")
-		end)
-	end
-end
-
-local function authenticateUser()
-	local premiumWhitelist = loadPremiumWhitelist()
-	local userId = player.UserId
-	local userName = player.Name
-	local executor = getExecutor()
-	local isPremium = isPremiumMember()
-	
-	local isPremiumWhitelisted = table.find(premiumWhitelist, userId) ~= nil
-	if isPremiumWhitelisted then
-		userTier = "PREMIUM"
-		sendWebhook("Authenticated", "Premium user logged in", 3066993, {
-			{name = "User", value = userName, inline = true},
-			{name = "User ID", value = tostring(userId), inline = true},
-			{name = "Status", value = "Premium", inline = true},
-			{name = "Roblox Premium", value = isPremium and "Yes" or "No", inline = true},
-			{name = "Executor", value = executor, inline = true}
-		})
-		return true, "Premium Access!", "PREMIUM"
-	end
-	
-	local savedStart, savedDuration = loadDailyData()
-	if savedStart then
-		local elapsed = os.time() - savedStart
-		if elapsed < savedDuration then
-			dailyStartTime = savedStart
-			userTier = "DAILY"
-			local remaining = getRemainingDailyTime()
-			sendWebhook("Daily Active", "Daily user logged in", 16753920, {
-				{name = "User", value = userName, inline = true},
-				{name = "User ID", value = tostring(userId), inline = true},
-				{name = "Status", value = "Daily (24 Hours)", inline = true},
-				{name = "Time Remaining", value = formatTime(remaining), inline = true},
-				{name = "Roblox Premium", value = isPremium and "Yes" or "No", inline = true}
-			})
-			return true, "Daily Active!", "DAILY"
-		else
-			userTier = "NONE"
-			return false, "DAILY_EXPIRED", "NONE"
-		end
-	end
-	
-	return false, "KEY_REQUIRED", "NONE"
-end
-
-local function validateDailyKey(key)
-	local dailyKeys = loadDailyKeys()
-	local keyTrimmed = key:match("^%s*(.-)%s*$"):upper()
-	for _, validKey in ipairs(dailyKeys) do
-		local validKeyTrimmed = validKey:match("^%s*(.-)%s*$"):upper()
-		if keyTrimmed == validKeyTrimmed then
-			return true
-		end
-	end
-	return false
-end
-
-local function notifyNewKey(key, keyType)
-	sendWebhook("New Registration", "User registered with " .. keyType .. " key", 3447003, {
-		{name = "User", value = player.Name, inline = true},
-		{name = "User ID", value = tostring(player.UserId), inline = true},
-		{name = "Key Type", value = keyType, inline = true},
-		{name = "Key", value = key, inline = false},
-		{name = "Roblox Premium", value = isPremiumMember() and "Yes" or "No", inline = true},
-		{name = "Action Required", value = "Add User ID to whitelist.txt for permanent access", inline = false}
-	})
-end
-
-local function createKeySystemUI()
-	local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-	
-	local KeyWindow = WindUI:CreateWindow({
-		Title = "Key System",
-		Icon = "key",
-		Author = "AstrionHUB+",
-		Folder = "AstrionKeySystem",
-		Size = UDim2.fromOffset(450, 400),
-		Transparent = true,
-		Theme = "Dark",
-		Resizable = false,
-	})
-	
-	local KeyTab = KeyWindow:Tab({Title = "Authentication", Icon = "shield"})
-	
-	KeyTab:Paragraph({
-		Title = "Welcome",
-		Desc = "User: " .. player.Name .. "\nUser ID: " .. player.UserId .. "\nRoblox Premium: " .. (isPremiumMember() and "Yes" or "No"),
-		Image = "info",
-		ImageSize = 20,
-		Color = "White"
-	})
-	
-	KeyTab:Paragraph({
-		Title = "Key Types",
-		Desc = "Premium - Full access + Auto-save position & settings\nDaily - 24 hour access to all features",
-		Image = "key",
-		ImageSize = 20,
-		Color = "White"
-	})
-	
-	local keyInput = ""
-	
-	KeyTab:Input({
-		Title = "Enter Key",
-		Desc = "Input your premium or daily key",
-		Value = "",
-		Placeholder = "PREMIUM-XXXX or DAILY-XXXX",
-		Callback = function(Value)
-			keyInput = Value
-		end
-	})
-	
-	KeyTab:Button({
-		Title = "Verify Key",
-		Desc = "Verify",
-		Icon = "check",
-		Callback = function()
-			if keyInput == "" then
-				WindUI:Notify({Title = "Error", Content = "Enter a key", Duration = 3, Icon = "circle-alert"})
-				return
-			end
-			
-			if validateDailyKey(keyInput) then
-				dailyStartTime = os.time()
-				saveDailyData(dailyStartTime)
-				userTier = "DAILY"
-				
-				sendWebhook("Daily Started", "User activated daily key", 16753920, {
-					{name = "User", value = player.Name, inline = true},
-					{name = "User ID", value = tostring(player.UserId), inline = true},
-					{name = "Key", value = keyInput, inline = false},
-					{name = "Duration", value = "24 Hours", inline = true}
-				})
-				
-				WindUI:Notify({
-					Title = "Daily Activated",
-					Content = "Daily access granted for 24 hours!\n\nLoading main panel...",
-					Duration = 5,
-					Icon = "clock"
-				})
-				
-				task.wait(2)
-				KeyWindow:Destroy()
-				return
-			end
-			
-			notifyNewKey(keyInput, "PREMIUM")
-			WindUI:Notify({
-				Title = "Premium Key Valid",
-				Content = "Key verified! User ID sent to admin.\nWait for whitelist approval.\n\nYour User ID: " .. player.UserId,
-				Duration = 10,
-				Icon = "check-circle"
-			})
-			task.wait(3)
-			KeyWindow:Destroy()
-			return
-		end
-	})
-	
-	KeyTab:Button({
-		Title = "Copy User ID",
-		Icon = "clipboard",
-		Callback = function()
-			if setclipboard then
-				setclipboard(tostring(player.UserId))
-				WindUI:Notify({Title = "Copied", Content = "User ID copied to clipboard", Duration = 2, Icon = "check"})
-			end
-		end
-	})
-	
-	return KeyWindow
-end
-
--- ============================================================
--- MAIN AUTH
--- ============================================================
-
-local success, message, tier = authenticateUser()
-
-if not success then
-	if message == "KEY_REQUIRED" then
-		createKeySystemUI()
-		repeat task.wait(0.5) until userTier ~= "NONE"
-	elseif message == "DAILY_EXPIRED" then
-		local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-		WindUI:Notify({
-			Title = "Daily Expired",
-			Content = "Your 24-hour access has ended.\nPlease get a new daily key or upgrade to premium.",
-			Duration = 10,
-			Icon = "clock"
-		})
-		createKeySystemUI()
-		repeat task.wait(0.5) until userTier ~= "NONE"
-	else
-		local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
-		WindUI:Notify({Title = "Auth Failed", Content = message, Duration = 10, Icon = "shield-alert"})
-		return
-	end
-else
-	userTier = tier
-end
-
-if userTier == "NONE" then
-	return
-end
-
--- Load replays after authentication
-savedReplays = loadReplays()
-
--- ============================================================
--- CHECKPOINT DETECTION FUNCTIONS (UPDATED)
--- ============================================================
-
-local function findNearestCheckpoint()
-	if not humanoidRootPart or not humanoidRootPart.Parent then return nil end
-	
-	local nearestCP = nil
-	local nearestDistance = cpDetectionRadius
-	
-	for _, descendant in ipairs(Workspace:GetDescendants()) do
-		if descendant:IsA("BasePart") and descendant.Name:lower():find(cpKeyword:lower()) then
-			-- Check if this checkpoint was already reached
-			local alreadyReached = false
-			for _, reachedCP in ipairs(checkpointsReached) do
-				if reachedCP == descendant then
-					alreadyReached = true
-					break
-				end
-			end
-			
-			if not alreadyReached then
-				local distance = (descendant.Position - humanoidRootPart.Position).Magnitude
-				if distance < nearestDistance then
-					nearestDistance = distance
-					nearestCP = descendant
-				end
-			end
-		end
-	end
-	
-	return nearestCP
-end
-
-local function createBeamToCheckpoint(checkpoint)
-	if currentBeam then
-		pcall(function() currentBeam:Destroy() end)
-		currentBeam = nil
-	end
-	
-	if not cpBeamVisual or not checkpoint or not humanoidRootPart then return end
-	
-	local attachment0 = Instance.new("Attachment")
-	attachment0.Parent = humanoidRootPart
-	
-	local attachment1 = Instance.new("Attachment")
-	attachment1.Parent = checkpoint
-	
-	local beam = Instance.new("Beam")
-	beam.Attachment0 = attachment0
-	beam.Attachment1 = attachment1
-	beam.Color = ColorSequence.new(Color3.fromRGB(0, 255, 0))
-	beam.Width0 = 0.5
-	beam.Width1 = 0.5
-	beam.FaceCamera = true
-	beam.Parent = humanoidRootPart
-	
-	currentBeam = beam
-end
-
-local function destroyBeam()
-	if currentBeam then
-		pcall(function() currentBeam:Destroy() end)
-		currentBeam = nil
-	end
-end
-
--- NEW: Function to check if character is touching a checkpoint
-local function checkCheckpointTouch()
-	if not humanoidRootPart or not humanoidRootPart.Parent then return end
-	
-	for _, descendant in ipairs(Workspace:GetDescendants()) do
-		if descendant:IsA("BasePart") and descendant.Name:lower():find(cpKeyword:lower()) then
-			local distance = (descendant.Position - humanoidRootPart.Position).Magnitude
-			
-			-- If touching checkpoint (within 5 studs)
-			if distance < 5 then
-				-- Check if not already recorded
-				local alreadyRecorded = false
-				if lastCheckpointReached then
-					if lastCheckpointReached == descendant then
-						alreadyRecorded = true
-					end
-				end
-				
-				if not alreadyRecorded then
-					-- Update last checkpoint
-					lastCheckpointReached = descendant
-					lastCheckpointPosition = descendant.Position
-					
-					-- Save immediately for premium users
-					if userTier == "PREMIUM" then
-						savePositionData()
-						updatePositionInfo()
-					end
-					
-					print("✓ Checkpoint Reached:", descendant.Name)
-				end
-				break
-			end
-		end
-	end
-end
-
--- ============================================================
--- MAIN SCRIPT
--- ============================================================
-
+-------------------------------------------------------------
+-- LOAD LIBRARY UI
+-------------------------------------------------------------
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
-local function onCharacterAdded(char)
-	character = char
-	humanoidRootPart = char:WaitForChild("HumanoidRootPart", 10)
-	
-	-- NEW: Check for saved checkpoint position on spawn
-	if userTier == "PREMIUM" then
-		task.wait(1)
-		local posData = loadPositionData()
-		if posData and posData.lastCheckpoint and posData.jobId == game.JobId then
-			-- Find the checkpoint in workspace
-			for _, descendant in ipairs(Workspace:GetDescendants()) do
-				if descendant:IsA("BasePart") and descendant.Name == posData.lastCheckpoint.name then
-					lastCheckpointReached = descendant
-					lastCheckpointPosition = Vector3.new(
-						posData.lastCheckpoint.position[1],
-						posData.lastCheckpoint.position[2],
-						posData.lastCheckpoint.position[3]
-					)
-					print("✓ Restored Last Checkpoint:", descendant.Name)
-					break
-				end
-			end
-		end
-	end
-end
+-------------------------------------------------------------
+-- LOCALIZATION (Optional)
+-------------------------------------------------------------
+WindUI:Localization({
+    Enabled = false,
+    Prefix = "loc:",
+    DefaultLanguage = "en",
+})
 
-player.CharacterAdded:Connect(onCharacterAdded)
-if player.Character then onCharacterAdded(player.Character) end
+-------------------------------------------------------------
+-- THEME
+-------------------------------------------------------------
+WindUI:AddTheme({
+    Name = "RullzsyHUB Theme",
+    Accent = Color3.fromHex("#18181b"),
+    Dialog = Color3.fromHex("#161616"),
+    Outline = Color3.fromHex("#FFFFFF"),
+    Text = Color3.fromHex("#FFFFFF"),
+    Placeholder = Color3.fromHex("#7a7a7a"),
+    Background = Color3.fromHex("#101010"),
+    Button = Color3.fromHex("#52525b"),
+    Icon = Color3.fromHex("#a1a1aa")
+})
 
-local function startMovement() isMoving = true end
-local function stopMovement() isMoving = false end
-
-local function applyIntervalRotation(cf)
-	if intervalFlipEnabled then
-		local pos = cf.Position
-		local rot = cf - pos
-		local newRot = CFrame.Angles(0, math.pi, 0) * rot
-		return CFrame.new(pos) * newRot
-	end
-	return cf
-end
-
-local function walkToPosition(targetPos, token, showNotification)
-	if not humanoidRootPart or not humanoidRootPart.Parent then return false end
-	
-	local hum = character and character:FindFirstChildOfClass("Humanoid")
-	if not hum or hum.Health <= 0 then return false end
-	
-	local currentPos = humanoidRootPart.Position
-	local distance = (targetPos - currentPos).Magnitude
-	
-	if distance < 2 then return true end
-	
-	if showNotification then
-		WindUI:Notify({Title = "Moving", Content = "Walking to position...", Duration = 2, Icon = "footprints"})
-	end
-	
-	hum:MoveTo(targetPos)
-	
-	local moveFinished = false
-	local moveConnection
-	moveConnection = hum.MoveToFinished:Connect(function(reached)
-		moveFinished = true
-		if moveConnection then
-			moveConnection:Disconnect()
-		end
-	end)
-	
-	local startTime = tick()
-	while not moveFinished and token == movementToken and (tick() - startTime) < 30 do
-		task.wait(0.1)
-		
-		if (humanoidRootPart.Position - targetPos).Magnitude < 2 then
-			moveFinished = true
-			break
-		end
-	end
-	
-	if moveConnection then
-		moveConnection:Disconnect()
-	end
-	
-	return token == movementToken and moveFinished
-end
-
-local function setupMovement(char)
-	if not char then return end
-	task.spawn(function()
-		local humanoid = char:WaitForChild("Humanoid", 10)
-		local root = char:WaitForChild("HumanoidRootPart", 10)
-		if not humanoid or not root then return end
-		
-		humanoid.Died:Connect(function()
-			stopMovement()
-			destroyBeam()
-			if currentReplayToken then
-				currentReplayToken = nil
-				if activeStop then activeStop() end
-				WindUI:Notify({Title = "Stopped", Content = "Character died - replay stopped", Duration = 3, Icon = "skull"})
-			end
-		end)
-		
-		if animConn then pcall(function() animConn:Disconnect() end) animConn = nil end
-		
-		local lastPos = root.Position
-		local jumpCooldown = false
-		
-		animConn = RunService.RenderStepped:Connect(function()
-			if not humanoidRootPart or not humanoidRootPart.Parent then
-				if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-					humanoidRootPart = player.Character.HumanoidRootPart
-					root = humanoidRootPart
-				else return end
-			end
-			if not humanoid or humanoid.Health <= 0 then return end
-			
-			if isMoving then
-				local direction = root.Position - lastPos
-				local dist = direction.Magnitude
-				if dist > 0.01 then
-					humanoid:Move(direction.Unit * math.clamp(dist * 5, 0, 1), false)
-				else
-					humanoid:Move(Vector3.zero, false)
-				end
-				local deltaY = root.Position.Y - lastPos.Y
-				if deltaY > 0.9 and not jumpCooldown then
-					humanoid.Jump = true
-					jumpCooldown = true
-					task.delay(0.4, function() jumpCooldown = false end)
-				end
-				lastPos = root.Position
-				
-				-- NEW: Check checkpoint touch during movement
-				checkCheckpointTouch()
-			end
-			
-			if autoHeal and humanoid.Health > 0 and humanoid.Health < humanoid.MaxHealth then
-				humanoid.Health = humanoid.MaxHealth
-			end
-		end)
-	end)
-end
-
-player.CharacterAdded:Connect(function(char)
-	onCharacterAdded(char)
-end)
-
-if player.Character then onCharacterAdded(player.Character) end
-
-local function playReplay(data, replayIdx, startFromFrame)
-	local token = {}
-	currentReplayToken = token
-	movementToken = token
-	isPaused = false
-	activeStop = nil
-	pausedPosition = nil
-	isWalkingToCheckpoint = false
-	cpDetectionActive = autoDetectCheckpoint
-	checkpointsReached = {}
-	
-	if replayIdx then currentReplayIndex = replayIdx end
-	
-	local hum = character and character:FindFirstChildOfClass("Humanoid")
-	if not hum or not humanoidRootPart then return end
-	
-	hum.BreakJointsOnDeath = false
-	
-	local deathConnection
-	deathConnection = hum.Died:Connect(function()
-		currentReplayToken = nil
-		destroyBeam()
-		if deathConnection then deathConnection:Disconnect() end
-	end)
-	
-	local function finalize()
-		stopMovement()
-		destroyBeam()
-		if currentReplayToken == token then currentReplayToken = nil end
-		if deathConnection then deathConnection:Disconnect() end
-		activeStop = nil
-		pausedPosition = nil
-		cpDetectionActive = false
-		if animConn then 
-			pcall(function() animConn:Disconnect() end) 
-			animConn = nil 
-		end
-		
-		-- Save position for premium users
-		if userTier == "PREMIUM" then
-			savePositionData()
-			updatePositionInfo()
-		end
-	end
-	
-	activeStop = function() currentReplayToken = nil finalize() end
-	
-	setupMovement(character)
-	
-	local startFrame = startFromFrame or 1
-	local firstFrame = data[startFrame]
-	
-	-- NEW: For premium users, check if starting from saved checkpoint position
-	if userTier == "PREMIUM" and startFrame == 1 then
-		local posData = loadPositionData()
-		if posData and posData.lastCheckpoint and posData.jobId == game.JobId then
-			-- Teleport to last checkpoint position instead of replay start
-			local cpPos = Vector3.new(
-				posData.lastCheckpoint.position[1],
-				posData.lastCheckpoint.position[2],
-				posData.lastCheckpoint.position[3]
-			)
-			humanoidRootPart.CFrame = CFrame.new(cpPos)
-			
-			WindUI:Notify({
-				Title = "Premium: Checkpoint Spawn",
-				Content = "Spawned at last checkpoint: " .. (posData.lastCheckpoint.name or "Unknown"),
-				Duration = 3,
-				Icon = "crown"
-			})
-			task.wait(0.5)
-		elseif firstFrame then
-			local startPos = Vector3.new(firstFrame.Position[1], firstFrame.Position[2], firstFrame.Position[3])
-			local currentPos = humanoidRootPart.Position
-			if (startPos - currentPos).Magnitude > 2 then
-				local success = walkToPosition(startPos, token, true)
-				if not success or token ~= movementToken then return finalize() end
-			end
-		end
-	elseif firstFrame and startFrame == 1 then
-		local startPos = Vector3.new(firstFrame.Position[1], firstFrame.Position[2], firstFrame.Position[3])
-		local currentPos = humanoidRootPart.Position
-		if (startPos - currentPos).Magnitude > 2 then
-			local success = walkToPosition(startPos, token, true)
-			if not success or token ~= movementToken then return finalize() end
-		end
-	end
-	
-	startMovement()
-	local i, total = startFrame, #data
-	currentFrameIndex = startFrame
-	
-	while i <= total do
-		if currentReplayToken ~= token then break end
-		
-		-- Checkpoint Detection
-		if cpDetectionActive and not isPaused and not isWalkingToCheckpoint then
-			local checkpoint = findNearestCheckpoint()
-			if checkpoint then
-				-- Pause replay
-				isPaused = true
-				isWalkingToCheckpoint = true
-				lastPausedFrameIndex = math.floor(i)
-				stopMovement()
-				
-				-- Mark this checkpoint as reached
-				table.insert(checkpointsReached, checkpoint)
-				
-				WindUI:Notify({
-					Title = "Checkpoint Detected",
-					Content = "Pausing replay, walking to checkpoint...",
-					Duration = 3,
-					Icon = "flag"
-				})
-				
-				createBeamToCheckpoint(checkpoint)
-				
-				-- Walk to checkpoint
-				local success = walkToPosition(checkpoint.Position, token, false)
-				
-				destroyBeam()
-				
-				if success and currentReplayToken == token then
-					-- Update last checkpoint reached
-					lastCheckpointReached = checkpoint
-					lastCheckpointPosition = checkpoint.Position
-					
-					-- Save for premium users
-					if userTier == "PREMIUM" then
-						savePositionData()
-						updatePositionInfo()
-					end
-					
-					WindUI:Notify({
-						Title = "Checkpoint Reached",
-						Content = "Waiting " .. delayAfterCheckpoint .. " seconds before resuming...",
-						Duration = delayAfterCheckpoint,
-						Icon = "check"
-					})
-					
-					task.wait(delayAfterCheckpoint)
-					
-					-- Resume replay
-					if currentReplayToken == token then
-						isWalkingToCheckpoint = false
-						isPaused = false
-						
-						WindUI:Notify({
-							Title = "Resuming Replay",
-							Content = "Continuing from frame " .. lastPausedFrameIndex,
-							Duration = 2,
-							Icon = "play"
-						})
-						
-						startMovement()
-					end
-				else
-					break
-				end
-			end
-		end
-		
-		-- Manual pause handler
-		if isPaused and not isWalkingToCheckpoint then
-			stopMovement()
-			if not pausedPosition and humanoidRootPart then
-				pausedPosition = humanoidRootPart.Position
-			end
-			
-			while isPaused and currentReplayToken == token do 
-				task.wait(0.1)
-			end
-			
-			if currentReplayToken == token then
-				if pausedPosition and humanoidRootPart then
-					local distance = (pausedPosition - humanoidRootPart.Position).Magnitude
-					if distance > 2 then
-						WindUI:Notify({Title = "Returning", Content = "Walking back to paused position...", Duration = 2, Icon = "corner-down-left"})
-						local success = walkToPosition(pausedPosition, token, false)
-						if not success or token ~= movementToken then break end
-					end
-				end
-				
-				pausedPosition = nil
-				startMovement()
-			end
-		end
-		
-		if currentReplayToken ~= token then break end
-		
-		local f = data[math.floor(i)]
-		
-		if humanoidRootPart and humanoidRootPart.Parent and f then
-			local pos = Vector3.new(f.Position[1], f.Position[2], f.Position[3])
-			local look = Vector3.new(f.LookVector[1], f.LookVector[2], f.LookVector[3])
-			local up = Vector3.new(f.UpVector[1], f.UpVector[2], f.UpVector[3])
-			
-			local targetCF = CFrame.lookAt(pos, pos + look, up)
-			targetCF = applyIntervalRotation(targetCF)
-			humanoidRootPart.CFrame = targetCF
-		end
-		
-		i = i + currentSpeed
-		currentFrameIndex = math.floor(i)
-		
-		-- Auto-save position every 100 frames for premium users
-		if userTier == "PREMIUM" and currentFrameIndex % 100 == 0 then
-			savePositionData()
-		end
-		
-		task.wait()
-	end
-	
-	finalize()
-end
-
-local function anySelected()
-	for _, r in ipairs(savedReplays) do
-		if r.Selected then return true end
-	end
-	return false
-end
-
-local function playLoopSelected()
-	while autoLoopSelectedActive do
-		if not anySelected() then
-			RunService.Heartbeat:Wait()
-		else
-			local selectedReplays = {}
-			for _, r in ipairs(savedReplays) do
-				if r.Selected then table.insert(selectedReplays, r) end
-			end
-			
-			local startIdx = 1
-			if currentReplayIndex then
-				for idx, r in ipairs(selectedReplays) do
-					local originalIdx = table.find(savedReplays, r)
-					if originalIdx == currentReplayIndex then startIdx = idx break end
-				end
-			end
-			
-			for idx = startIdx, #selectedReplays do
-				if not autoLoopSelectedActive then break end
-				
-				local r = selectedReplays[idx]
-				local originalIdx = table.find(savedReplays, r)
-				
-				playReplay(r.Frames, originalIdx)
-				
-				repeat RunService.Heartbeat:Wait() until currentReplayToken == nil or not autoLoopSelectedActive
-				if not autoLoopSelectedActive then break end
-				
-				if autoRespawn and autoLoopSelectedActive and idx == #selectedReplays then
-					-- Save before respawn for premium users
-					if userTier == "PREMIUM" then
-						savePositionData()
-					end
-					
-					local hum = character and character:FindFirstChildOfClass("Humanoid")
-					if hum then
-						hum:ChangeState(Enum.HumanoidStateType.Dead)
-						hum.Health = 0
-					end
-					player.CharacterAdded:Wait()
-					character = player.Character
-					if character then humanoidRootPart = character:WaitForChild("HumanoidRootPart", 10) end
-					task.wait(0.5)
-				end
-				
-				if autoLoopSelectedActive and idx == #selectedReplays then
-					if loopDelay > 0 then task.wait(loopDelay) end
-					currentReplayIndex = nil
-				end
-			end
-		end
-		RunService.Heartbeat:Wait()
-	end
-end
-
-local function getReplayOptions()
-	local options = {}
-	for i, replay in ipairs(savedReplays) do
-		table.insert(options, i .. ". " .. replay.Name .. " (" .. #replay.Frames .. " frames)")
-	end
-	return options
-end
-
-local function updateReplayDropdown()
-	if ReplayDropdown then pcall(function() ReplayDropdown:Refresh(getReplayOptions()) end) end
-end
-
-local function getCurrentTime() return os.date("%I:%M:%S %p") end
-local function getCurrentDate() return os.date("%A, %B %d, %Y") end
-
-local function getServerInfo()
-	local JobId = game.JobId
-	local PlaceId = game.PlaceId
-	local PlayerCount = #Players:GetPlayers()
-	local MaxPlayers = Players.MaxPlayers
-	local ServerRegion = "Unknown"
-	
-	pcall(function()
-		ServerRegion = game:GetService("LocalizationService"):GetCountryRegionForPlayerAsync(player)
-	end)
-	
-	return string.format(
-		"Job ID: %s\nPlace ID: %s\nPlayers: %d/%d\nRegion: %s",
-		JobId ~= "" and JobId or "Unknown",
-		PlaceId,
-		PlayerCount,
-		MaxPlayers,
-		ServerRegion
-	)
-end
-
-local function serverHop()
-	local PlaceId = game.PlaceId
-	local servers = {}
-	
-	WindUI:Notify({Title = "Server Hop", Content = "Finding servers...", Duration = 3, Icon = "globe"})
-	
-	pcall(function()
-		local cursor = ""
-		repeat
-			local url = string.format(
-				"https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100&cursor=%s",
-				PlaceId,
-				cursor
-			)
-			
-			local response = game:HttpGet(url)
-			local data = HttpService:JSONDecode(response)
-			
-			for _, server in ipairs(data.data) do
-				if server.playing < server.maxPlayers and server.id ~= game.JobId then
-					table.insert(servers, server.id)
-				end
-			end
-			
-			cursor = data.nextPageCursor or ""
-		until cursor == "" or #servers >= 10
-	end)
-	
-	if #servers > 0 then
-		local randomServer = servers[math.random(1, #servers)]
-		WindUI:Notify({Title = "Teleporting", Content = "Joining new server...", Duration = 3, Icon = "zap"})
-		TeleportService:TeleportToPlaceInstance(PlaceId, randomServer, player)
-	else
-		WindUI:Notify({Title = "Failed", Content = "No servers available", Duration = 3, Icon = "circle-alert"})
-	end
-end
-
-local function rejoinServer()
-	WindUI:Notify({Title = "Rejoining", Content = "Rejoining server...", Duration = 2, Icon = "refresh-cw"})
-	TeleportService:Teleport(game.PlaceId, player)
-end
-
--- ============================================================
--- UI CREATION
--- ============================================================
-
+-------------------------------------------------------------
+-- WINDOW PROCESS
+-------------------------------------------------------------
 local Window = WindUI:CreateWindow({
-	Title = "AstrionHUB+",
-	Icon = "video",
-	Author = player.Name .. (userTier == "PREMIUM" and " 👑" or ""),
-	Folder = "AstrionHUBPlus",
-	Size = UDim2.fromOffset(580, 460),
-	Transparent = true,
-	Theme = "Dark",
-	Resizable = true,
+    Title = "AstrionHUB | MOUNT YAHAYUK",
+    Icon = "lucide:braces",
+    Author = "by Jinho",
+    Folder = "RullzsyHUB_MountYahayuk",
+    Size = UDim2.fromOffset(580, 460),
+    MinSize = Vector2.new(560, 350),
+    MaxSize = Vector2.new(850, 560),
+    Transparent = true,
+    Theme = "AstrionHUB Theme",
+    Resizable = true,
+    SideBarWidth = 200,
+    BackgroundImageTransparency = 0.42,
+    HideSearchBar = false,
+    ScrollBarEnabled = true,
 })
 
-Window:Tag({
-	Title = "v1.0.7",
-	Color = Color3.fromHex("#30ff6a"),
-	Radius = 13,
-})
+-------------------------------------------------------------
+-- SERVICES
+-------------------------------------------------------------
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local HttpService = game:GetService("HttpService")
+local StarterGui = game:GetService("StarterGui")
+local TweenService = game:GetService("TweenService")
+local CoreGui = game:GetService("CoreGui")
 
--- ============================================================
--- PROFILE TAB
--- ============================================================
+-------------------------------------------------------------
+-- IMPORT
+-------------------------------------------------------------
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local humanoid = character:WaitForChild("Humanoid")
+local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+local setclipboard = setclipboard or toclipboard
 
-local ProfileTab = Window:Tab({Title = "Profile", Icon = "user"})
-
-local premiumStatus = isPremiumMember() and "Yes" or "No"
-
-ProfileTab:Paragraph({
-	Title = "User",
-	Desc = string.format("Username: %s\nID: %s\nRoblox Premium: %s", player.Name, player.UserId, premiumStatus),
-	Image = "user",
-	ImageSize = 20,
-	Color = "White"
-})
-
-local tierStatus = userTier == "PREMIUM" and "Premium 👑" or (userTier == "DAILY" and "Daily" or "None")
-
-ProfileTab:Paragraph({
-	Title = "Security",
-	Desc = string.format("Status: %s\nExecutor: %s", tierStatus, getExecutor()),
-	Image = "shield-check",
-	ImageSize = 20,
-	Color = "White"
-})
-
-local DailyTimerParagraph = nil
-
-if userTier == "DAILY" then
-	DailyTimerParagraph = ProfileTab:Paragraph({
-		Title = "Daily Time",
-		Desc = "Remaining: " .. formatTime(getRemainingDailyTime()),
-		Image = "clock",
-		ImageSize = 20,
-		Color = "White"
-	})
-	
-	task.spawn(function()
-		while userTier == "DAILY" do
-			task.wait(1)
-			local remaining = getRemainingDailyTime()
-			if remaining <= 0 then
-				WindUI:Notify({
-					Title = "Daily Expired",
-					Content = "Your daily access has ended. Please get a new key.",
-					Duration = 10,
-					Icon = "clock"
-				})
-				task.wait(2)
-				player:Kick("Daily period ended. Thank you for using AstrionHUB+!")
-				break
-			end
-			pcall(function()
-				if DailyTimerParagraph then
-					DailyTimerParagraph:SetDesc("Remaining: " .. formatTime(remaining))
-				end
-			end)
-		end
-	end)
+-------------------------------------------------------------
+-- AUTO WALK
+-------------------------------------------------------------
+-----| AUTO WALK VARIABLES |-----
+local mainFolder = "RullzsyHUB"
+local jsonFolder = mainFolder .. "/js_mount_yahayuk_v1"
+if not isfolder(mainFolder) then
+    makefolder(mainFolder)
+end
+if not isfolder(jsonFolder) then
+    makefolder(jsonFolder)
 end
 
-local ClockParagraph = ProfileTab:Paragraph({
-	Title = "Time",
-	Desc = getCurrentTime() .. "\n" .. getCurrentDate(),
-	Image = "clock",
-	ImageSize = 20,
-	Color = "White"
-})
+-- Server URL and JSON checkpoint file list
+local baseURL = "https://raw.githubusercontent.com/syannnho/Replays/refs/heads/main/yahayuk"
+local jsonFiles = {
+    "spawnpoint_jalur_1.json",
+    "spawnpoint_jalur_2.json",
+	"spawnpoint_jalur_3.json",
+	"checkpoint_1.json",
+    "checkpoint_2.json",
+    "checkpoint_3.json",
+    "checkpoint_4_jalur_1.json",
+    "checkpoint_4_jalur_2.json",
+	"checkpoint_5.json",
+}
 
-task.spawn(function()
-	while task.wait(1) do
-		pcall(function()
-			if ClockParagraph then ClockParagraph:SetDesc(getCurrentTime() .. "\n" .. getCurrentDate()) end
-		end)
-	end
+local isPlaying = false
+local playbackConnection = nil
+local autoLoopEnabled = false
+local currentCheckpoint = 0
+local isPaused = false
+local manualLoopEnabled = false
+local pausedTime = 0
+local pauseStartTime = 0
+local lastPlaybackTime = 0
+local accumulatedTime = 0
+local loopingEnabled = false
+local isManualMode = false
+local manualStartCheckpoint = 0
+local recordedHipHeight = nil
+local currentHipHeight = nil
+local hipHeightOffset = 0
+local playbackSpeed = 1.0
+local lastFootstepTime = 0
+local footstepInterval = 0.35
+local leftFootstep = true
+local isFlipped = false
+local FLIP_SMOOTHNESS = 0.05
+local currentFlipRotation = CFrame.new()
+
+-------------------------------------------------------------
+-----| AUTO WALK FUNCTIONS |-----
+local function vecToTable(v3)
+    return {x = v3.X, y = v3.Y, z = v3.Z}
+end
+
+local function tableToVec(t)
+    return Vector3.new(t.x, t.y, t.z)
+end
+
+local function lerp(a, b, t)
+    return a + (b - a) * t
+end
+
+local function lerpVector(a, b, t)
+    return Vector3.new(lerp(a.X, b.X, t), lerp(a.Y, b.Y, t), lerp(a.Z, b.Z, t))
+end
+
+local function lerpAngle(a, b, t)
+    local diff = (b - a)
+    while diff > math.pi do diff = diff - 2*math.pi end
+    while diff < -math.pi do diff = diff + 2*math.pi end
+    return a + diff * t
+end
+
+local function calculateHipHeightOffset()
+    if not humanoid then return 0 end
+    currentHipHeight = humanoid.HipHeight
+    if not recordedHipHeight then
+        recordedHipHeight = 2.0
+    end
+    hipHeightOffset = recordedHipHeight - currentHipHeight
+    return hipHeightOffset
+end
+
+local function adjustPositionForAvatarSize(position)
+    if hipHeightOffset == 0 then return position end
+    return Vector3.new(
+        position.X,
+        position.Y - hipHeightOffset,
+        position.Z
+    )
+end
+
+local function playFootstepSound()
+    if not humanoid or not character then return end
+    pcall(function()
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        local rayOrigin = hrp.Position
+        local rayDirection = Vector3.new(0, -5, 0)
+        local raycastParams = RaycastParams.new()
+        raycastParams.FilterDescendantsInstances = {character}
+        raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+        local rayResult = workspace:Raycast(rayOrigin, rayDirection, raycastParams)
+        if rayResult and rayResult.Instance then
+            local sound = Instance.new("Sound")
+            sound.Volume = 0.8
+            sound.RollOffMaxDistance = 100
+            sound.RollOffMinDistance = 10
+            local soundId = "rbxasset://sounds/action_footsteps_plastic.mp3"
+            sound.SoundId = soundId
+            sound.Parent = hrp
+            sound:Play()
+            game:GetService("Debris"):AddItem(sound, 1)
+        end
+    end)
+end
+
+local function simulateNaturalMovement(moveDirection, velocity)
+    if not humanoid or not character then return end
+    local horizontalVelocity = Vector3.new(velocity.X, 0, velocity.Z)
+    local speed = horizontalVelocity.Magnitude
+    local onGround = false
+    pcall(function()
+        local state = humanoid:GetState()
+        onGround = (state == Enum.HumanoidStateType.Running or 
+                   state == Enum.HumanoidStateType.RunningNoPhysics or 
+                   state == Enum.HumanoidStateType.Landed)
+    end)
+    if speed > 0.5 and onGround then
+        local currentTime = tick()
+        local speedMultiplier = math.clamp(speed / 16, 0.3, 2)
+        local adjustedInterval = footstepInterval / (speedMultiplier * playbackSpeed)
+        if currentTime - lastFootstepTime >= adjustedInterval then
+            playFootstepSound()
+            lastFootstepTime = currentTime
+            leftFootstep = not leftFootstep
+        end
+    end
+end
+
+local function EnsureJsonFile(fileName)
+    local savePath = jsonFolder .. "/" .. fileName
+    if isfile(savePath) then return true, savePath end
+    local ok, res = pcall(function() return game:HttpGet(baseURL..fileName) end)
+    if ok and res and #res > 0 then
+        writefile(savePath, res)
+        return true, savePath
+    end
+    return false, nil
+end
+
+local function loadCheckpoint(fileName)
+    local filePath = jsonFolder .. "/" .. fileName
+    if not isfile(filePath) then
+        warn("File not found:", filePath)
+        return nil
+    end
+    local success, result = pcall(function()
+        local jsonData = readfile(filePath)
+        if not jsonData or jsonData == "" then
+            error("Empty file")
+        end
+        return HttpService:JSONDecode(jsonData)
+    end)
+    if success and result then
+        if result[1] and result[1].hipHeight then
+            recordedHipHeight = result[1].hipHeight
+        end
+        return result
+    else
+        warn("❌ Load error for", fileName, ":", result)
+        return nil
+    end
+end
+
+local function findSurroundingFrames(data, t)
+    if #data == 0 then return nil, nil, 0 end
+    if t <= data[1].time then return 1, 1, 0 end
+    if t >= data[#data].time then return #data, #data, 0 end
+    local left, right = 1, #data
+    while left < right - 1 do
+        local mid = math.floor((left + right) / 2)
+        if data[mid].time <= t then
+            left = mid
+        else
+            right = mid
+        end
+    end
+    local i0, i1 = left, right
+    local span = data[i1].time - data[i0].time
+    local alpha = span > 0 and math.clamp((t - data[i0].time) / span, 0, 1) or 0
+    return i0, i1, alpha
+end
+
+local function stopPlayback()
+    isPlaying = false
+    isPaused = false
+    pausedTime = 0
+    accumulatedTime = 0
+    lastPlaybackTime = 0
+    lastFootstepTime = 0
+    recordedHipHeight = nil
+    hipHeightOffset = 0
+    isFlipped = false
+    currentFlipRotation = CFrame.new()
+    if playbackConnection then
+        playbackConnection:Disconnect()
+        playbackConnection = nil
+    end
+end
+
+local function startPlayback(data, onComplete)
+    if not data or #data == 0 then
+        warn("No data to play!")
+        if onComplete then onComplete() end
+        return
+    end
+    if isPlaying then stopPlayback() end
+    isPlaying = true
+    isPaused = false
+    pausedTime = 0
+    accumulatedTime = 0
+    local playbackStartTime = tick()
+    lastPlaybackTime = playbackStartTime
+    local lastJumping = false
+    calculateHipHeightOffset()
+    if playbackConnection then
+        playbackConnection:Disconnect()
+        playbackConnection = nil
+    end
+
+    local first = data[1]
+    if character and character:FindFirstChild("HumanoidRootPart") then
+        local hrp = character.HumanoidRootPart
+        local firstPos = tableToVec(first.position)
+        firstPos = adjustPositionForAvatarSize(firstPos)
+        local firstYaw = first.rotation or 0
+        local startCFrame = CFrame.new(firstPos) * CFrame.Angles(0, firstYaw, 0)
+        hrp.CFrame = startCFrame
+        hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+        hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
+        if humanoid then
+            humanoid:Move(tableToVec(first.moveDirection or {x=0,y=0,z=0}), false)
+        end
+    end
+
+    playbackConnection = RunService.Heartbeat:Connect(function(deltaTime)
+        if not isPlaying then return end
+        if isPaused then
+            if pauseStartTime == 0 then
+                pauseStartTime = tick()
+            end
+            lastPlaybackTime = tick()
+            return
+        else
+            if pauseStartTime > 0 then
+                pausedTime = pausedTime + (tick() - pauseStartTime)
+                pauseStartTime = 0
+                lastPlaybackTime = tick()
+            end
+        end
+        if not character or not character:FindFirstChild("HumanoidRootPart") then return end
+        if not humanoid or humanoid.Parent ~= character then
+            humanoid = character:FindFirstChild("Humanoid")
+            calculateHipHeightOffset()
+        end
+        local currentTime = tick()
+        local actualDelta = currentTime - lastPlaybackTime
+        lastPlaybackTime = currentTime
+        actualDelta = math.min(actualDelta, 0.1)
+        accumulatedTime = accumulatedTime + (actualDelta * playbackSpeed)
+        local totalDuration = data[#data].time
+        if accumulatedTime > totalDuration then
+            local final = data[#data]
+            if character and character:FindFirstChild("HumanoidRootPart") then
+                local hrp = character.HumanoidRootPart
+                local finalPos = tableToVec(final.position)
+                finalPos = adjustPositionForAvatarSize(finalPos)
+                local finalYaw = final.rotation or 0
+                local targetCFrame = CFrame.new(finalPos) * CFrame.Angles(0, finalYaw, 0)
+                local targetFlipRotation = isFlipped and CFrame.Angles(0, math.pi, 0) or CFrame.new()
+                currentFlipRotation = currentFlipRotation:Lerp(targetFlipRotation, FLIP_SMOOTHNESS)
+                hrp.CFrame = targetCFrame * currentFlipRotation
+                if humanoid then
+                    humanoid:Move(tableToVec(final.moveDirection or {x=0,y=0,z=0}), false)
+                end
+            end
+            stopPlayback()
+            if onComplete then onComplete() end
+            return
+        end
+        local i0, i1, alpha = findSurroundingFrames(data, accumulatedTime)
+        local f0, f1 = data[i0], data[i1]
+        if not f0 or not f1 then return end
+        local pos0 = tableToVec(f0.position)
+        local pos1 = tableToVec(f1.position)
+        local vel0 = tableToVec(f0.velocity or {x=0,y=0,z=0})
+        local vel1 = tableToVec(f1.velocity or {x=0,y=0,z=0})
+        local move0 = tableToVec(f0.moveDirection or {x=0,y=0,z=0})
+        local move1 = tableToVec(f1.moveDirection or {x=0,y=0,z=0})
+        local yaw0 = f0.rotation or 0
+        local yaw1 = f1.rotation or 0
+        local interpPos = lerpVector(pos0, pos1, alpha)
+        interpPos = adjustPositionForAvatarSize(interpPos)
+        local interpVel = lerpVector(vel0, vel1, alpha)
+        local interpMove = lerpVector(move0, move1, alpha)
+        local interpYaw = lerpAngle(yaw0, yaw1, alpha)
+        local hrp = character.HumanoidRootPart
+        local targetCFrame = CFrame.new(interpPos) * CFrame.Angles(0, interpYaw, 0)
+        local targetFlipRotation = isFlipped and CFrame.Angles(0, math.pi, 0) or CFrame.new()
+        currentFlipRotation = currentFlipRotation:Lerp(targetFlipRotation, FLIP_SMOOTHNESS)
+        local lerpFactor = math.clamp(1 - math.exp(-10 * actualDelta), 0, 1)
+        hrp.CFrame = hrp.CFrame:Lerp(targetCFrame * currentFlipRotation, lerpFactor)
+        pcall(function()
+            hrp.AssemblyLinearVelocity = interpVel
+        end)
+        if humanoid then
+            humanoid:Move(interpMove, false)
+        end
+        simulateNaturalMovement(interpMove, interpVel)
+        local jumpingNow = f0.jumping or false
+        if f1.jumping then jumpingNow = true end
+        if jumpingNow and not lastJumping then
+            if humanoid then
+                humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end
+        end
+        lastJumping = jumpingNow
+    end)
+end
+
+local function startAutoWalkSequence()
+    currentCheckpoint = 0
+    local function playNext()
+        if not autoLoopEnabled then return end
+        currentCheckpoint = currentCheckpoint + 1
+        if currentCheckpoint > #jsonFiles then
+            if loopingEnabled then
+                WindUI:Notify({
+                    Title = "Auto Walk",
+                    Content = "Semua checkpoint selesai! Looping dari awal...",
+                    Duration = 3,
+                    Icon = "lucide:repeat"
+                })
+                task.wait(1)
+                startAutoWalkSequence()
+            else
+                autoLoopEnabled = false
+                WindUI:Notify({
+                    Title = "Auto Walk",
+                    Content = "Auto walk selesai! Semua checkpoint sudah dilewati.",
+                    Duration = 5,
+                    Icon = "lucide:check-check"
+                })
+            end
+            return
+        end
+        local checkpointFile = jsonFiles[currentCheckpoint]
+        local ok, path = EnsureJsonFile(checkpointFile)
+        if not ok then
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Failed to download: " .. checkpointFile,
+                Duration = 5,
+                Icon = "lucide:ban"
+            })
+            autoLoopEnabled = false
+            return
+        end
+        local data = loadCheckpoint(checkpointFile)
+        if data and #data > 0 then
+            WindUI:Notify({
+                Title = "Auto Walk (Automatic)",
+                Content = "Auto walk berhasil dijalankan",
+                Duration = 2,
+                Icon = "lucide:bot"
+            })
+            task.wait(0.5)
+            startPlayback(data, playNext)
+        else
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Error loading: " .. checkpointFile,
+                Duration = 5,
+                Icon = "lucide:ban"
+            })
+            autoLoopEnabled = false
+        end
+    end
+    playNext()
+end
+
+local function startManualAutoWalkSequence(startCheckpoint)
+    currentCheckpoint = startCheckpoint - 1
+    isManualMode = true
+    autoLoopEnabled = true
+    local function walkToStartIfNeeded(data)
+        if not character or not character:FindFirstChild("HumanoidRootPart") then
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Character belum siap (HRP tidak ditemukan).",
+                Duration = 3,
+                Icon = "lucide:ban"
+            })
+            return false
+        end
+        local hrp = character.HumanoidRootPart
+        if not data or not data[1] or not data[1].position then
+            return true
+        end
+        local startPos = tableToVec(data[1].position)
+        local distance = (hrp.Position - startPos).Magnitude
+        if distance > 100 then
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = string.format("Terlalu jauh (%.0f studs). Maks 100 studs untuk memulai.", distance),
+                Duration = 4,
+                Icon = "lucide:alert-triangle"
+            })
+            autoLoopEnabled = false
+            isManualMode = false
+            return false
+        end
+        WindUI:Notify({
+            Title = "Auto Walk (Manual)",
+            Content = string.format("Menuju titik awal... (%.0f studs)", distance),
+            Duration = 3,
+            Icon = "lucide:footprints"
+        })
+        local humanoidLocal = character:FindFirstChildOfClass("Humanoid")
+        if not humanoidLocal then
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Humanoid tidak ditemukan, gagal berjalan.",
+                Duration = 3,
+                Icon = "lucide:ban"
+            })
+            autoLoopEnabled = false
+            isManualMode = false
+            return false
+        end
+        local reached = false
+        local reachedConnection
+        reachedConnection = humanoidLocal.MoveToFinished:Connect(function(r)
+            reached = r
+            if reachedConnection then
+                reachedConnection:Disconnect()
+                reachedConnection = nil
+            end
+        end)
+        humanoidLocal:MoveTo(startPos)
+        local timeout = 20
+        local waited = 0
+        while not reached and waited < timeout and autoLoopEnabled do
+            task.wait(0.25)
+            waited = waited + 0.25
+        end
+        if reached then
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Sudah sampai titik awal. Memulai playback...",
+                Duration = 2,
+                Icon = "lucide:play"
+            })
+            return true
+        else
+            if reachedConnection then
+                reachedConnection:Disconnect()
+                reachedConnection = nil
+            end
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Gagal mencapai titik awal (timeout atau dibatalkan).",
+                Duration = 3,
+                Icon = "lucide:ban"
+            })
+            autoLoopEnabled = false
+            isManualMode = false
+            return false
+        end
+    end
+    local function playNext()
+        if not autoLoopEnabled then return end
+        currentCheckpoint = currentCheckpoint + 1
+        if currentCheckpoint > #jsonFiles then
+            if loopingEnabled then
+                WindUI:Notify({
+                    Title = "Auto Walk (Manual)",
+                    Content = "Semua checkpoint selesai! Looping dari checkpoint 1...",
+                    Duration = 3,
+                    Icon = "lucide:repeat"
+                })
+                task.wait(1)
+                currentCheckpoint = 0
+                playNext()
+            else
+                autoLoopEnabled = false
+                isManualMode = false
+                WindUI:Notify({
+                    Title = "Auto Walk (Manual)",
+                    Content = "Auto walk selesai!",
+                    Duration = 2,
+                    Icon = "lucide:check-check"
+                })
+            end
+            return
+        end
+        local checkpointFile = jsonFiles[currentCheckpoint]
+        local ok, path = EnsureJsonFile(checkpointFile)
+        if not ok then
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Failed to download checkpoint",
+                Duration = 5,
+                Icon = "lucide:ban"
+            })
+            autoLoopEnabled = false
+            isManualMode = false
+            return
+        end
+        local data = loadCheckpoint(checkpointFile)
+        if data and #data > 0 then
+            task.wait(0.5)
+            if isManualMode and currentCheckpoint == startCheckpoint then
+                local okWalk = walkToStartIfNeeded(data)
+                if not okWalk then
+                    return
+                end
+            end
+            startPlayback(data, playNext)
+        else
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Error loading: " .. checkpointFile,
+                Duration = 5,
+                Icon = "lucide:ban"
+            })
+            autoLoopEnabled = false
+            isManualMode = false
+        end
+    end
+    playNext()
+end
+
+local function playSingleCheckpointFile(fileName, checkpointIndex)
+    if loopingEnabled then
+        stopPlayback()
+        startManualAutoWalkSequence(checkpointIndex)
+        return
+    end
+    autoLoopEnabled = false
+    isManualMode = false
+    stopPlayback()
+    local ok, path = EnsureJsonFile(fileName)
+    if not ok then
+        WindUI:Notify({
+            Title = "Error",
+            Content = "Failed to ensure JSON checkpoint",
+            Duration = 4,
+            Icon = "lucide:ban"
+        })
+        return
+    end
+    local data = loadCheckpoint(fileName)
+    if not data or #data == 0 then
+        WindUI:Notify({
+            Title = "Error",
+            Content = "File invalid / kosong",
+            Duration = 4,
+            Icon = "lucide:ban"
+        })
+        return
+    end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        WindUI:Notify({
+            Title = "Error",
+            Content = "HumanoidRootPart tidak ditemukan!",
+            Duration = 4,
+            Icon = "lucide:ban"
+        })
+        return
+    end
+    local startPos = tableToVec(data[1].position)
+    local distance = (hrp.Position - startPos).Magnitude
+    if distance > 100 then
+        WindUI:Notify({
+            Title = "Auto Walk (Manual)",
+            Content = string.format("Terlalu jauh (%.0f studs)! Harus dalam jarak 100.", distance),
+            Duration = 4,
+            Icon = "lucide:alert-triangle"
+        })
+        return
+    end
+    WindUI:Notify({
+        Title = "Auto Walk (Manual)",
+        Content = string.format("Menuju ke titik awal... (%.0f studs)", distance),
+        Duration = 3,
+        Icon = "lucide:footprints"
+    })
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local moving = true
+    humanoid:MoveTo(startPos)
+    local reachedConnection
+    reachedConnection = humanoid.MoveToFinished:Connect(function(reached)
+        if reached then
+            moving = false
+            reachedConnection:Disconnect()
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Sudah sampai di titik awal, mulai playback...",
+                Duration = 2,
+                Icon = "lucide:play"
+            })
+            task.wait(0.5)
+            startPlayback(data, function()
+                WindUI:Notify({
+                    Title = "Auto Walk (Manual)",
+                    Content = "Auto walk selesai!",
+                    Duration = 2,
+                    Icon = "lucide:check-check"
+                })
+            end)
+        else
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Gagal mencapai titik awal!",
+                Duration = 3,
+                Icon = "lucide:ban"
+            })
+            moving = false
+            reachedConnection:Disconnect()
+        end
+    end)
+    task.spawn(function()
+        local timeout = 20
+        local elapsed = 0
+        while moving and elapsed < timeout do
+            task.wait(1)
+            elapsed += 1
+        end
+        if moving then
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Tidak bisa mencapai titik awal (timeout)!",
+                Duration = 3,
+                Icon = "lucide:ban"
+            })
+            humanoid:Move(Vector3.new(0,0,0))
+            moving = false
+            if reachedConnection then reachedConnection:Disconnect() end
+        end
+    end)
+end
+
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = character:WaitForChild("Humanoid")
+    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    if isPlaying then stopPlayback() end
 end)
 
-ProfileTab:Button({
-	Title = "Copy User ID",
-	Icon = "clipboard",
-	Callback = function()
-		if setclipboard then
-			setclipboard(tostring(player.UserId))
-			WindUI:Notify({Title = "Copied", Content = "User ID copied", Duration = 2, Icon = "check"})
-		end
-	end
-})
+-------------------------------------------------------------
+-- PAUSE/ROTATE UI (MOBILE FRIENDLY & DRAGGABLE)
+-------------------------------------------------------------
+local BTN_COLOR = Color3.fromRGB(38, 38, 38)
+local BTN_HOVER = Color3.fromRGB(55, 55, 55)
+local TEXT_COLOR = Color3.fromRGB(230, 230, 230)
+local WARN_COLOR = Color3.fromRGB(255, 140, 0)
+local SUCCESS_COLOR = Color3.fromRGB(0, 170, 85)
+local ROTATE_COLOR = Color3.fromRGB(100, 100, 255)
 
--- ============================================================
--- MAIN TAB
--- ============================================================
+local function createPauseRotateUI()
+    local ui = Instance.new("ScreenGui")
+    ui.Name = "PauseRotateUI"
+    ui.IgnoreGuiInset = true
+    ui.ResetOnSpawn = false
+    ui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ui.Parent = CoreGui
 
-local MainTab = Window:Tab({Title = "Main", Icon = "play"})
+    local bgFrame = Instance.new("Frame")
+    bgFrame.Name = "PR_Background"
+    bgFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    bgFrame.BackgroundTransparency = 0.4
+    bgFrame.BorderSizePixel = 0
+    bgFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    bgFrame.Position = UDim2.new(0.5, 0, 0.85, 0)
+    bgFrame.Size = UDim2.new(0, 130, 0, 70)
+    bgFrame.Visible = false
+    bgFrame.Parent = ui
 
-MainTab:Paragraph({
-	Title = "Playback Controls",
-	Desc = "Control replay playback with enhanced features",
-	Image = "play-circle",
-	ImageSize = 20,
-	Color = "White"
-})
+    local bgCorner = Instance.new("UICorner", bgFrame)
+    bgCorner.CornerRadius = UDim.new(0, 20)
 
-local searchQuery = ""
+    local dragIndicator = Instance.new("Frame")
+    dragIndicator.Name = "DragIndicator"
+    dragIndicator.BackgroundTransparency = 1
+    dragIndicator.Position = UDim2.new(0.5, 0, 0, 8)
+    dragIndicator.Size = UDim2.new(0, 40, 0, 6)
+    dragIndicator.AnchorPoint = Vector2.new(0.5, 0)
+    dragIndicator.Parent = bgFrame
 
-MainTab:Input({
-	Title = "Search Replays",
-	Desc = "Filter replays by name",
-	Value = "",
-	Placeholder = "Type to search...",
-	Callback = function(Value)
-		searchQuery = Value:lower()
-		local filtered = {}
-		for i, replay in ipairs(savedReplays) do
-			if replay.Name:lower():find(searchQuery, 1, true) or searchQuery == "" then
-				table.insert(filtered, i .. ". " .. replay.Name .. " (" .. #replay.Frames .. " frames)")
-			end
-		end
-		if ReplayDropdown then 
-			pcall(function() 
-				ReplayDropdown:Refresh(#filtered > 0 and filtered or {"No results"})
-			end) 
-		end
-	end
-})
+    local dotLayout = Instance.new("UIListLayout", dragIndicator)
+    dotLayout.FillDirection = Enum.FillDirection.Horizontal
+    dotLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    dotLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    dotLayout.Padding = UDim.new(0, 6)
 
-ReplayDropdown = MainTab:Dropdown({
-	Title = "Replays",
-	Values = getReplayOptions(),
-	Value = "",
-	Multi = false,
-	AllowNone = false,
-	Callback = function(Value)
-		if Value and Value ~= "No results" then
-			local index = tonumber(Value:match("^(%d+)%."))
-			SelectedReplayIndex = (index and savedReplays[index]) and index or nil
-		else
-			SelectedReplayIndex = nil
-		end
-	end
-})
+    for i = 1, 3 do
+        local dot = Instance.new("Frame")
+        dot.Name = "Dot" .. i
+        dot.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+        dot.BackgroundTransparency = 0.3
+        dot.BorderSizePixel = 0
+        dot.Size = UDim2.new(0, 6, 0, 6)
+        dot.Parent = dragIndicator
+        local dotCorner = Instance.new("UICorner", dot)
+        dotCorner.CornerRadius = UDim.new(1, 0)
+    end
 
-MainTab:Button({
-	Title = "Start" .. (userTier == "PREMIUM" and " 👑" or ""),
-	Desc = userTier == "PREMIUM" and "Play from saved checkpoint (Premium)" or "Play selected replay",
-	Icon = "play",
-	Callback = function()
-		if SelectedReplayIndex and savedReplays[SelectedReplayIndex] then
-			local replay = savedReplays[SelectedReplayIndex]
-			local startFrame = 1
-			
-			-- Premium: Load saved position
-			if userTier == "PREMIUM" then
-				local posData = loadPositionData()
-				if posData and posData.replayIndex == SelectedReplayIndex and posData.jobId == game.JobId then
-					startFrame = posData.frameIndex or 1
-					
-					local checkpointInfo = ""
-					if posData.lastCheckpoint then
-						checkpointInfo = "\nSpawning at: " .. posData.lastCheckpoint.name
-					end
-					
-					WindUI:Notify({
-						Title = "Premium: Continuing 👑",
-						Content = "Resuming from frame " .. startFrame .. checkpointInfo .. "\n" .. replay.Name,
-						Duration = 4,
-						Icon = "crown"
-					})
-				else
-					WindUI:Notify({
-						Title = "Starting",
-						Content = replay.Name,
-						Duration = 2,
-						Icon = "play"
-					})
-				end
-			else
-				WindUI:Notify({
-					Title = "Starting",
-					Content = replay.Name,
-					Duration = 2,
-					Icon = "play"
-				})
-			end
-			
-			task.spawn(function() 
-				playReplay(replay.Frames, SelectedReplayIndex, startFrame) 
-			end)
-		else
-			WindUI:Notify({Title = "No Selection", Content = "Select a replay first", Duration = 2, Icon = "circle-alert"})
-		end
-	end
-})
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "PR_Main"
+    mainFrame.BackgroundTransparency = 1
+    mainFrame.BorderSizePixel = 0
+    mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    mainFrame.Position = UDim2.new(0.5, 0, 0.6, 0)
+    mainFrame.Size = UDim2.new(1, -10, 0, 50)
+    mainFrame.Parent = bgFrame
 
-MainTab:Slider({
-	Title = "Speed",
-	Desc = "Adjust playback speed",
-	Step = 0.1,
-	Value = {Min = 0.1, Max = 10, Default = 1},
-	Callback = function(value) 
-		currentSpeed = value 
-		WindUI:Notify({
-			Title = "Speed Changed",
-			Content = value .. "x",
-			Duration = 1,
-			Icon = "gauge"
-		})
-	end
-})
+    local dragging = false
+    local dragInput, dragStart, startPos
+    local UserInputService = game:GetService("UserInputService")
 
-MainTab:Toggle({
-	Title = "Auto Loop for Selected",
-	Desc = "Automatically loop selected replay(s)",
-	Icon = "repeat",
-	Type = "Checkbox",
-	Default = false,
-	Callback = function(Value)
-		if not SelectedReplayIndex then
-			WindUI:Notify({
-				Title = "No Selection",
-				Content = "Select a replay first",
-				Duration = 2,
-				Icon = "circle-alert"
-			})
-			return
-		end
-		
-		savedReplays[SelectedReplayIndex].Selected = Value
-		
-		if Value then
-			autoLoopSelectedActive = true
-			task.spawn(playLoopSelected)
-			WindUI:Notify({
-				Title = "Auto Loop Started",
-				Content = savedReplays[SelectedReplayIndex].Name,
-				Duration = 2,
-				Icon = "repeat"
-			})
-		else
-			autoLoopSelectedActive = false
-			currentReplayIndex = nil
-			if activeStop then activeStop() end
-			currentReplayToken = nil
-			WindUI:Notify({
-				Title = "Auto Loop Stopped",
-				Content = "Loop disabled",
-				Duration = 2,
-				Icon = "square"
-			})
-		end
-	end
-})
+    local function update(input)
+        local delta = input.Position - dragStart
+        local newPos = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+        bgFrame.Position = newPos
+    end
 
-MainTab:Slider({
-	Title = "Delay Auto Loop For Selected",
-	Desc = "Delay between loop cycles (seconds)",
-	Step = 1,
-	Value = {Min = 0, Max = 60, Default = 0},
-	Callback = function(value) 
-		loopDelay = value 
-		WindUI:Notify({
-			Title = "Loop Delay Set",
-			Content = value .. " seconds",
-			Duration = 1,
-			Icon = "clock"
-		})
-	end
-})
+    bgFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = bgFrame.Position
+            for i, dot in ipairs(dragIndicator:GetChildren()) do
+                if dot:IsA("Frame") then
+                    TweenService:Create(dot, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+                        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+                        BackgroundTransparency = 0
+                    }):Play()
+                end
+            end
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    for i, dot in ipairs(dragIndicator:GetChildren()) do
+                        if dot:IsA("Frame") then
+                            TweenService:Create(dot, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+                                BackgroundColor3 = Color3.fromRGB(150, 150, 150),
+                                BackgroundTransparency = 0.3
+                            }):Play()
+                        end
+                    end
+                end
+            end)
+        end
+    end)
 
-MainTab:Button({
-	Title = "Resume & Play",
-	Desc = "Resume paused replay or continue",
-	Icon = "play-circle",
-	Callback = function()
-		if currentReplayToken and isPaused then
-			isPaused = false
-			isWalkingToCheckpoint = false
-			WindUI:Notify({
-				Title = "Resumed",
-				Content = "Replay resumed",
-				Duration = 2,
-				Icon = "play"
-			})
-		elseif SelectedReplayIndex and savedReplays[SelectedReplayIndex] then
-			local replay = savedReplays[SelectedReplayIndex]
-			task.spawn(function() 
-				playReplay(replay.Frames, SelectedReplayIndex, lastPausedFrameIndex or 1) 
-			end)
-			WindUI:Notify({
-				Title = "Playing",
-				Content = replay.Name,
-				Duration = 2,
-				Icon = "play"
-			})
-		else
-			WindUI:Notify({
-				Title = "No Replay",
-				Content = "No replay active or selected",
-				Duration = 2,
-				Icon = "circle-alert"
-			})
-		end
-	end
-})
+    bgFrame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
 
-MainTab:Button({
-	Title = "Stop",
-	Desc = "Stop current replay",
-	Icon = "square",
-	Callback = function()
-		autoLoopSelectedActive = false
-		currentReplayIndex = nil
-		lastPausedFrameIndex = 1
-		destroyBeam()
-		if activeStop then activeStop() else currentReplayToken = nil end
-		isPaused = false
-		pausedPosition = nil
-		isWalkingToCheckpoint = false
-		cpDetectionActive = false
-		checkpointsReached = {}
-		WindUI:Notify({Title = "Stopped", Content = "All replays stopped", Duration = 2, Icon = "stop-circle"})
-	end
-})
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            update(input)
+        end
+    end)
 
-MainTab:Toggle({
-	Title = "Auto Respawn",
-	Desc = "Automatically respawn after loop ends",
-	Icon = "refresh-cw",
-	Type = "Checkbox",
-	Default = false,
-	Callback = function(Value) 
-		autoRespawn = Value 
-		WindUI:Notify({
-			Title = Value and "Enabled" or "Disabled",
-			Content = "Auto respawn " .. (Value and "enabled" or "disabled"),
-			Duration = 2,
-			Icon = "refresh-cw"
-		})
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.autoRespawn = Value
-			saveSettings(settings)
-		end
-	end
-})
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if dragging then
+                dragging = false
+                for i, dot in ipairs(dragIndicator:GetChildren()) do
+                    if dot:IsA("Frame") then
+                        TweenService:Create(dot, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+                            BackgroundColor3 = Color3.fromRGB(150, 150, 150),
+                            BackgroundTransparency = 0.3
+                        }):Play()
+                    end
+                end
+            end
+        end
+    end)
 
-MainTab:Toggle({
-	Title = "Auto Heal",
-	Desc = "Keep health at maximum",
-	Icon = "heart",
-	Type = "Checkbox",
-	Default = false,
-	Callback = function(Value) 
-		autoHeal = Value 
-		WindUI:Notify({
-			Title = Value and "Enabled" or "Disabled",
-			Content = "Auto heal " .. (Value and "enabled" or "disabled"),
-			Duration = 2,
-			Icon = "heart"
-		})
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.autoHeal = Value
-			saveSettings(settings)
-		end
-	end
-})
+    local layout = Instance.new("UIListLayout", mainFrame)
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.VerticalAlignment = Enum.VerticalAlignment.Center
+    layout.Padding = UDim.new(0, 10)
 
-MainTab:Button({
-	Title = "Refresh Replays",
-	Desc = "Reload replays from server",
-	Icon = "refresh-cw",
-	Callback = function()
-		savedReplays = loadReplays()
-		SelectedReplayIndex = nil
-		searchQuery = ""
-		updateReplayDropdown()
-		WindUI:Notify({Title = "Refreshed", Content = "Loaded " .. #savedReplays .. " replays", Duration = 2, Icon = "refresh-cw"})
-	end
-})
+    local function createButton(emoji, color)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 50, 0, 50)
+        btn.BackgroundColor3 = BTN_COLOR
+        btn.BackgroundTransparency = 0.1
+        btn.TextColor3 = TEXT_COLOR
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 24
+        btn.Text = emoji
+        btn.AutoButtonColor = false
+        btn.BorderSizePixel = 0
+        btn.Parent = mainFrame
+        local c = Instance.new("UICorner", btn)
+        c.CornerRadius = UDim.new(1, 0)
+        btn.MouseEnter:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {
+                BackgroundColor3 = BTN_HOVER,
+                Size = UDim2.new(0, 54, 0, 54)
+            }):Play()
+        end)
+        btn.MouseLeave:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {
+                BackgroundColor3 = color or BTN_COLOR,
+                Size = UDim2.new(0, 50, 0, 50)
+            }):Play()
+        end)
+        return btn
+    end
 
-local function getReplayStats()
-	if #savedReplays == 0 then return "No replays available" end
-	local totalFrames = 0
-	local selectedCount = 0
-	for _, replay in ipairs(savedReplays) do
-		totalFrames = totalFrames + #replay.Frames
-		if replay.Selected then selectedCount = selectedCount + 1 end
-	end
-	return string.format("Total: %d\nSelected: %d\nTotal Frames: %d", #savedReplays, selectedCount, totalFrames)
+    local pauseResumeBtn = createButton("⏸️", BTN_COLOR)
+    local rotateBtn = createButton("🔄", BTN_COLOR)
+    local currentlyPaused = false
+    local tweenTime = 0.25
+    local showScale = 1
+    local hideScale = 0
+
+    local function showUI()
+        bgFrame.Visible = true
+        bgFrame.Size = UDim2.new(0, 130 * hideScale, 0, 70 * hideScale)
+        TweenService:Create(bgFrame, TweenInfo.new(tweenTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 130 * showScale, 0, 70 * showScale)
+        }):Play()
+    end
+
+    local function hideUI()
+        TweenService:Create(bgFrame, TweenInfo.new(tweenTime, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+            Size = UDim2.new(0, 130 * hideScale, 0, 70 * hideScale)
+        }):Play()
+        task.delay(tweenTime, function()
+            bgFrame.Visible = false
+        end)
+    end
+
+    pauseResumeBtn.MouseButton1Click:Connect(function()
+        if not isPlaying then
+            WindUI:Notify({
+                Title = "Auto Walk",
+                Content = "❌ Tidak ada auto walk yang sedang berjalan!",
+                Duration = 3,
+                Icon = "lucide:alert-triangle"
+            })
+            return
+        end
+        if not currentlyPaused then
+            isPaused = true
+            currentlyPaused = true
+            pauseResumeBtn.Text = "▶️"
+            pauseResumeBtn.BackgroundColor3 = SUCCESS_COLOR
+            WindUI:Notify({
+                Title = "Auto Walk",
+                Content = "⏸️ Auto walk dijeda.",
+                Duration = 2,
+                Icon = "lucide:pause"
+            })
+        else
+            isPaused = false
+            currentlyPaused = false
+            pauseResumeBtn.Text = "⏸️"
+            pauseResumeBtn.BackgroundColor3 = BTN_COLOR
+            WindUI:Notify({
+                Title = "Auto Walk",
+                Content = "▶️ Auto walk dilanjutkan.",
+                Duration = 2,
+                Icon = "lucide:play"
+            })
+        end
+    end)
+
+    rotateBtn.MouseButton1Click:Connect(function()
+        if not isPlaying then
+            WindUI:Notify({
+                Title = "Rotate",
+                Content = "❌ Auto walk harus berjalan terlebih dahulu!",
+                Duration = 3,
+                Icon = "lucide:alert-triangle"
+            })
+            return
+        end
+        isFlipped = not isFlipped
+        if isFlipped then
+            rotateBtn.Text = "🔃"
+            rotateBtn.BackgroundColor3 = SUCCESS_COLOR
+            WindUI:Notify({
+                Title = "Rotate",
+                Content = "🔄 Mode rotate AKTIF (jalan mundur)",
+                Duration = 2,
+                Icon = "lucide:rotate-cw"
+            })
+        else
+            rotateBtn.Text = "🔄"
+            rotateBtn.BackgroundColor3 = BTN_COLOR
+            WindUI:Notify({
+                Title = "Rotate",
+                Content = "🔄 Mode rotate NONAKTIF",
+                Duration = 2,
+                Icon = "lucide:rotate-ccw"
+            })
+        end
+    end)
+
+    local function resetUIState()
+        currentlyPaused = false
+        pauseResumeBtn.Text = "⏸️"
+        pauseResumeBtn.BackgroundColor3 = BTN_COLOR
+        isFlipped = false
+        rotateBtn.Text = "🔄"
+        rotateBtn.BackgroundColor3 = BTN_COLOR
+    end
+
+    return {
+        mainFrame = bgFrame,
+        showUI = showUI,
+        hideUI = hideUI,
+        resetUIState = resetUIState
+    }
 end
 
-local StatsParagraph = MainTab:Paragraph({
-	Title = "Statistics",
-	Desc = getReplayStats(),
-	Image = "bar-chart",
-	ImageSize = 20,
-	Color = "White"
-})
+local pauseRotateUI = createPauseRotateUI()
 
-task.spawn(function()
-	while task.wait(3) do
-		pcall(function()
-			if StatsParagraph then StatsParagraph:SetDesc(getReplayStats()) end
-		end)
-	end
-end)
-
--- ============================================================
--- ADVANCED TAB
--- ============================================================
-
-local AdvancedTab = Window:Tab({Title = "Advanced", Icon = "settings"})
-
-AdvancedTab:Paragraph({
-	Title = "Advanced Features",
-	Desc = "Checkpoint detection and advanced movement options",
-	Image = "sliders-horizontal",
-	ImageSize = 20,
-	Color = "White"
-})
-
-AdvancedTab:Toggle({
-	Title = "Auto Detect Checkpoint",
-	Desc = "Automatically detect and walk to checkpoints during replay",
-	Icon = "flag",
-	Type = "Checkbox",
-	Default = false,
-	Callback = function(Value) 
-		autoDetectCheckpoint = Value 
-		
-		if Value and not cpBeamVisual then
-			cpBeamVisual = true
-		end
-		
-		WindUI:Notify({
-			Title = Value and "Enabled" or "Disabled",
-			Content = "Checkpoint detection " .. (Value and "enabled" or "disabled"),
-			Duration = 2,
-			Icon = "flag"
-		})
-		
-		if not Value then
-			destroyBeam()
-			cpDetectionActive = false
-			checkpointsReached = {}
-		end
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.autoDetectCheckpoint = Value
-			if Value then settings.cpBeamVisual = true end
-			saveSettings(settings)
-		end
-	end
-})
-
-AdvancedTab:Toggle({
-	Title = "CP Beam Visual",
-	Desc = "Show visual beam to nearest checkpoint",
-	Icon = "zap",
-	Type = "Checkbox",
-	Default = false,
-	Callback = function(Value) 
-		cpBeamVisual = Value 
-		
-		if not Value then
-			destroyBeam()
-		end
-		
-		WindUI:Notify({
-			Title = Value and "Enabled" or "Disabled",
-			Content = "Checkpoint beam " .. (Value and "enabled" or "disabled"),
-			Duration = 2,
-			Icon = "zap"
-		})
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.cpBeamVisual = Value
-			saveSettings(settings)
-		end
-	end
-})
-
-AdvancedTab:Slider({
-	Title = "Delays After Checkpoint",
-	Desc = "Wait time after reaching checkpoint (seconds)",
-	Step = 0.5,
-	Value = {Min = 0, Max = 10, Default = 2},
-	Callback = function(value) 
-		delayAfterCheckpoint = value 
-		WindUI:Notify({
-			Title = "Delay Set",
-			Content = value .. " seconds",
-			Duration = 1,
-			Icon = "clock"
-		})
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.delayAfterCheckpoint = value
-			saveSettings(settings)
-		end
-	end
-})
-
-AdvancedTab:Slider({
-	Title = "Jarak Deteksi Checkpoint",
-	Desc = "Detection radius for checkpoints (studs)",
-	Step = 5,
-	Value = {Min = 10, Max = 200, Default = 50},
-	Callback = function(value) 
-		cpDetectionRadius = value 
-		WindUI:Notify({
-			Title = "Radius Set",
-			Content = value .. " studs",
-			Duration = 1,
-			Icon = "circle"
-		})
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.cpDetectionRadius = value
-			saveSettings(settings)
-		end
-	end
-})
-
-AdvancedTab:Input({
-	Title = "Keyword BasePart CP",
-	Desc = "Search keyword for checkpoint detection",
-	Value = cpKeyword,
-	Placeholder = "Checkpoint",
-	Callback = function(Value)
-		cpKeyword = Value
-		WindUI:Notify({
-			Title = "Keyword Updated",
-			Content = "Searching for: " .. Value,
-			Duration = 2,
-			Icon = "search"
-		})
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.cpKeyword = Value
-			saveSettings(settings)
-		end
-	end
-})
-
-AdvancedTab:Button({
-	Title = "Test CP Detection",
-	Desc = "Test checkpoint detection with current settings",
-	Icon = "crosshair",
-	Callback = function()
-		local cp = findNearestCheckpoint()
-		if cp then
-			local distance = (cp.Position - humanoidRootPart.Position).Magnitude
-			WindUI:Notify({
-				Title = "Checkpoint Found",
-				Content = string.format("Name: %s\nDistance: %.1f studs", cp.Name, distance),
-				Duration = 5,
-				Icon = "check-circle"
-			})
-			createBeamToCheckpoint(cp)
-			task.wait(3)
-			destroyBeam()
-		else
-			WindUI:Notify({
-				Title = "No Checkpoint",
-				Content = "No checkpoint found within " .. cpDetectionRadius .. " studs",
-				Duration = 3,
-				Icon = "circle-x"
-			})
-		end
-	end
-})
-
-AdvancedTab:Paragraph({
-	Title = "How It Works",
-	Desc = "When enabled:\n1. Replay runs normally\n2. System detects checkpoint in radius\n3. Replay pauses automatically\n4. Character walks to checkpoint\n5. Checkpoint saved (Premium)\n6. Waits for delay duration\n7. Replay resumes from paused frame\n8. Each checkpoint triggered once per run",
-	Image = "info",
-	ImageSize = 20,
-	Color = "White"
-})
-
-AdvancedTab:Toggle({
-	Title = "Interval Flip",
-	Desc = "Flip character rotation 180°",
-	Icon = "rotate-cw",
-	Type = "Checkbox",
-	Default = false,
-	Callback = function(Value) 
-		intervalFlipEnabled = Value
-		WindUI:Notify({
-			Title = Value and "Enabled" or "Disabled",
-			Content = "Interval flip " .. (Value and "enabled" or "disabled"),
-			Duration = 2,
-			Icon = "rotate-cw"
-		})
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.intervalFlipEnabled = Value
-			saveSettings(settings)
-		end
-	end
-})
-
--- ============================================================
--- SERVER TAB
--- ============================================================
-
-local ServerTab = Window:Tab({Title = "Server", Icon = "globe"})
-
-ServerTab:Paragraph({
-	Title = "Server Tools",
-	Desc = "Server management and teleport utilities",
-	Image = "server",
-	ImageSize = 20,
-	Color = "White"
-})
-
-local ServerInfoParagraph = ServerTab:Paragraph({
-	Title = "Server Info",
-	Desc = getServerInfo(),
-	Image = "database",
-	ImageSize = 20,
-	Color = "White"
-})
-
-task.spawn(function()
-	while task.wait(5) do
-		pcall(function()
-			if ServerInfoParagraph then 
-				ServerInfoParagraph:SetDesc(getServerInfo()) 
-			end
-		end)
-	end
-end)
-
-ServerTab:Button({
-	Title = "Copy Job ID",
-	Desc = "Copy server Job ID",
-	Icon = "clipboard",
-	Callback = function()
-		if setclipboard then
-			local jobId = game.JobId
-			if jobId ~= "" then
-				setclipboard(jobId)
-				WindUI:Notify({Title = "Copied", Content = "Job ID copied to clipboard", Duration = 2, Icon = "check"})
-			else
-				WindUI:Notify({Title = "Error", Content = "Job ID not available", Duration = 2, Icon = "circle-alert"})
-			end
-		else
-			WindUI:Notify({Title = "Error", Content = "Clipboard not available", Duration = 2, Icon = "circle-alert"})
-		end
-	end
-})
-
-ServerTab:Button({
-	Title = "Copy Place ID",
-	Desc = "Copy game Place ID",
-	Icon = "copy",
-	Callback = function()
-		if setclipboard then
-			setclipboard(tostring(game.PlaceId))
-			WindUI:Notify({Title = "Copied", Content = "Place ID copied", Duration = 2, Icon = "check"})
-		else
-			WindUI:Notify({Title = "Error", Content = "Clipboard not available", Duration = 2, Icon = "circle-alert"})
-		end
-	end
-})
-
-ServerTab:Paragraph({
-	Title = "Server Actions",
-	Desc = "Teleport and server utilities",
-	Image = "tool",
-	ImageSize = 20,
-	Color = "White"
-})
-
-ServerTab:Button({
-	Title = "Private Server",
-	Desc = "Load private server script",
-	Icon = "lock",
-	Callback = function()
-		WindUI:Notify({Title = "Loading", Content = "Loading private server script...", Duration = 3, Icon = "loader"})
-		local success, err = pcall(function()
-			loadstring(game:HttpGet("https://pastebin.com/raw/hvvsLKzr"))()
-		end)
-		if success then
-			WindUI:Notify({Title = "Loaded", Content = "Private server script loaded", Duration = 3, Icon = "check-circle"})
-		else
-			WindUI:Notify({Title = "Failed", Content = "Failed to load script", Duration = 3, Icon = "circle-alert"})
-		end
-	end
-})
-
-ServerTab:Button({
-	Title = "Server Hop",
-	Desc = "Join random server",
-	Icon = "shuffle",
-	Callback = function()
-		serverHop()
-	end
-})
-
-ServerTab:Button({
-	Title = "Rejoin Server",
-	Desc = "Rejoin current server",
-	Icon = "refresh-cw",
-	Callback = function()
-		rejoinServer()
-	end
-})
-
-ServerTab:Paragraph({
-	Title = "Warning",
-	Desc = "Server hop and rejoin will teleport you.\nYou may be kicked temporarily.",
-	Image = "alert-triangle",
-	ImageSize = 16,
-	Color = "White"
-})
-
--- ============================================================
--- SETTINGS TAB
--- ============================================================
-
-local SettingsTab = Window:Tab({Title = "Settings", Icon = "sliders-horizontal"})
-
-SettingsTab:Paragraph({
-	Title = "General Settings",
-	Desc = "Configure general options",
-	Image = "settings",
-	ImageSize = 20,
-	Color = "White"
-})
-
-SettingsTab:Toggle({
-	Title = "Anti AFK",
-	Desc = "Prevent AFK kick",
-	Icon = "shield",
-	Type = "Checkbox",
-	Default = false,
-	Callback = function(Value) 
-		antiAfkEnabled = Value 
-		WindUI:Notify({
-			Title = Value and "Enabled" or "Disabled",
-			Content = "Anti AFK " .. (Value and "enabled" or "disabled"),
-			Duration = 2,
-			Icon = "shield"
-		})
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.antiAfkEnabled = Value
-			saveSettings(settings)
-		end
-	end
-})
-
-SettingsTab:Toggle({
-	Title = "Full Bright",
-	Desc = "Maximum lighting",
-	Icon = "sun",
-	Type = "Checkbox",
-	Default = false,
-	Callback = function(Value)
-		fullBrightEnabled = Value
-		if Value then
-			lighting.Ambient = Color3.fromRGB(255, 255, 255)
-			lighting.Brightness = 2
-			lighting.ColorShift_Bottom = Color3.fromRGB(255, 255, 255)
-			lighting.ColorShift_Top = Color3.fromRGB(255, 255, 255)
-			lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
-			lighting.ClockTime = 14
-			lighting.FogEnd = 100000
-			lighting.FogStart = 0
-			lighting.GlobalShadows = false
-			WindUI:Notify({Title = "Full Bright", Content = "Enabled", Duration = 2, Icon = "sun"})
-		else
-			lighting.Ambient = originalLighting.Ambient
-			lighting.Brightness = originalLighting.Brightness
-			lighting.ColorShift_Bottom = originalLighting.ColorShift_Bottom
-			lighting.ColorShift_Top = originalLighting.ColorShift_Top
-			lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
-			lighting.ClockTime = originalLighting.ClockTime
-			lighting.FogEnd = originalLighting.FogEnd
-			lighting.FogStart = originalLighting.FogStart
-			lighting.GlobalShadows = originalLighting.GlobalShadows
-			WindUI:Notify({Title = "Full Bright", Content = "Disabled", Duration = 2, Icon = "moon"})
-		end
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.fullBrightEnabled = Value
-			saveSettings(settings)
-		end
-	end
-})
-
-SettingsTab:Button({
-	Title = "Reset Character",
-	Desc = "Respawn character",
-	Icon = "refresh-cw",
-	Callback = function()
-		if activeStop then activeStop() end
-		currentReplayIndex = nil
-		pausedPosition = nil
-		lastPausedFrameIndex = 1
-		destroyBeam()
-		checkpointsReached = {}
-		local hum = character and character:FindFirstChildOfClass("Humanoid")
-		if hum then
-			hum:ChangeState(Enum.HumanoidStateType.Dead)
-			hum.Health = 0
-			WindUI:Notify({Title = "Reset", Content = "Character reset", Duration = 2, Icon = "refresh-cw"})
-		end
-	end
-})
-
-SettingsTab:Button({
-	Title = "Import Data",
-	Icon = "clipboard",
-	Callback = function()
-		if getclipboard then
-			local success, data = pcall(function() return HttpService:JSONDecode(getclipboard()) end)
-			if success and type(data) == "table" then
-				savedReplays = data
-				SelectedReplayIndex = nil
-				updateReplayDropdown()
-				WindUI:Notify({Title = "Imported", Content = #savedReplays .. " replays imported", Duration = 3, Icon = "check-circle"})
-			else
-				WindUI:Notify({Title = "Failed", Content = "Invalid format", Duration = 3, Icon = "circle-alert"})
-			end
-		else
-			WindUI:Notify({Title = "Error", Content = "Clipboard unavailable", Duration = 3, Icon = "circle-alert"})
-		end
-	end
-})
-
-if userTier == "PREMIUM" then
-	SettingsTab:Paragraph({
-		Title = "Premium Settings 👑",
-		Desc = "Settings and checkpoint position automatically saved",
-		Image = "crown",
-		ImageSize = 20,
-		Color = "White"
-	})
-	
-	SettingsTab:Button({
-		Title = "Save Settings Now",
-		Desc = "Manually save current settings",
-		Icon = "save",
-		Callback = function()
-			local settings = {
-				antiAfkEnabled = antiAfkEnabled,
-				fullBrightEnabled = fullBrightEnabled,
-				intervalFlipEnabled = intervalFlipEnabled,
-				autoRespawn = autoRespawn,
-				autoHeal = autoHeal,
-				autoDetectCheckpoint = autoDetectCheckpoint,
-				cpBeamVisual = cpBeamVisual,
-				delayAfterCheckpoint = delayAfterCheckpoint,
-				cpDetectionRadius = cpDetectionRadius,
-				cpKeyword = cpKeyword
-			}
-			saveSettings(settings)
-			WindUI:Notify({
-				Title = "Settings Saved",
-				Content = "All settings saved successfully",
-				Duration = 3,
-				Icon = "check-circle"
-			})
-		end
-	})
-	
-	SettingsTab:Button({
-		Title = "Clear Saved Position",
-		Desc = "Delete saved position data",
-		Icon = "trash-2",
-		Callback = function()
-			if delfile and isfile and isfile(POSITION_SAVE_FILE) then
-				pcall(function()
-					delfile(POSITION_SAVE_FILE)
-				end)
-				lastCheckpointReached = nil
-				lastCheckpointPosition = nil
-				WindUI:Notify({
-					Title = "Cleared",
-					Content = "Saved position deleted",
-					Duration = 2,
-					Icon = "check"
-				})
-				updatePositionInfo()
-			else
-				WindUI:Notify({
-					Title = "No Data",
-					Content = "No saved position found",
-					Duration = 2,
-					Icon = "info"
-				})
-			end
-		end
-	})
+local originalStopPlayback = stopPlayback
+stopPlayback = function()
+    originalStopPlayback()
+    pauseRotateUI.resetUIState()
 end
 
--- ============================================================
--- APPEARANCE TAB
--- ============================================================
-
-local AppearanceTab = Window:Tab({Title = "Appearance", Icon = "palette"})
-
-AppearanceTab:Paragraph({
-	Title = "UI Customization",
-	Desc = "Personalize the interface",
-	Image = "palette",
-	ImageSize = 20,
-	Color = "White"
+-------------------------------------------------------------
+-- TAB MENU
+-------------------------------------------------------------
+local AutoWalkTab = Window:Tab({
+    Title = "Auto Walk",
+    Icon = "lucide:bot"
 })
 
-local themes = {}
-for themeName, _ in pairs(WindUI:GetThemes()) do table.insert(themes, themeName) end
-table.sort(themes)
-
-AppearanceTab:Dropdown({
-	Title = "Theme",
-	Values = themes,
-	Value = "Dark",
-	Multi = false,
-	AllowNone = false,
-	Callback = function(theme)
-		WindUI:SetTheme(theme)
-		WindUI:Notify({Title = "Theme Changed", Content = theme, Icon = "palette", Duration = 2})
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.theme = theme
-			saveSettings(settings)
-		end
-	end
+local VisualTab = Window:Tab({
+    Title = "Visual",
+    Icon = "lucide:layers"
 })
 
-AppearanceTab:Slider({
-	Title = "Transparency",
-	Value = {Min = 0, Max = 1, Default = 0.2},
-	Step = 0.1,
-	Callback = function(value)
-		WindUI.TransparencyValue = tonumber(value)
-		Window:ToggleTransparency(tonumber(value) > 0)
-		
-		if userTier == "PREMIUM" then
-			local settings = loadSettings()
-			settings.transparency = value
-			saveSettings(settings)
-		end
-	end
+local RunAnimationTab = Window:Tab({
+    Title = "Run Animation",
+    Icon = "lucide:person-standing"
 })
 
--- ============================================================
--- INFO TAB
--- ============================================================
-
-local InfoTab = Window:Tab({Title = "Info", Icon = "info"})
-
-InfoTab:Paragraph({
-	Title = "Quick Guide",
-	Desc = "1. Search and select a replay from dropdown\n2. Click 'Start' to play replay\n3. Enable 'Auto Loop for Selected' to continuously loop\n4. Use 'Resume & Play' to continue from pause\n5. 'Stop' button stops all active replays\n6. Speed slider adjusts playback speed",
-	Image = "book-open",
-	ImageSize = 20,
-	Color = "White"
+local UpdateTab = Window:Tab({
+    Title = "Update Script",
+    Icon = "lucide:file"
 })
 
-InfoTab:Paragraph({
-	Title = "Checkpoint System",
-	Desc = "Advanced Tab Features:\n- Auto Detect: Pauses replay when checkpoint found\n- CP Beam Visual: Shows direction to checkpoint\n- Walks to checkpoint automatically\n- Continues replay after reaching checkpoint\n- Each checkpoint triggered only once per run\n- Premium: Auto-saves last checkpoint reached\n- Premium: Spawns at last checkpoint on return",
-	Image = "flag",
-	ImageSize = 20,
-	Color = "White"
+local CreditsTab = Window:Tab({
+    Title = "Credits",
+    Icon = "lucide:scroll-text"
 })
 
-if userTier == "PREMIUM" then
-	InfoTabPositionParagraph = InfoTab:Paragraph({
-		Title = "Premium Position Save 👑",
-		Desc = "Loading position data...",
-		Image = "crown",
-		ImageSize = 20,
-		Color = "White"
-	})
-	
-	task.spawn(function()
-		task.wait(1)
-		updatePositionInfo()
-	end)
-	
-	InfoTab:Paragraph({
-		Title = "How Checkpoint Save Works 👑",
-		Desc = "1. When you touch a checkpoint, it's automatically saved\n2. Your current frame and position are saved\n3. When you leave and rejoin the SAME server:\n   - Click 'Start' to spawn at last checkpoint\n   - Continue from where you left off\n4. If different server, you need to rejoin\n5. Only last checkpoint is saved per game",
-		Image = "info",
-		ImageSize = 20,
-		Color = "White"
-	})
+-------------------------------------------------------------
+-- AUTO WALK TAB
+-------------------------------------------------------------
+AutoWalkTab:Section({
+    Title = "Auto Walk (Settings)",
+    Icon = "lucide:settings"
+})
+
+-- Pause/Rotate Menu Toggle
+local PauseRotateToggle = AutoWalkTab:Toggle({
+    Title = "Pause/Rotate Menu",
+    Desc = "Show/Hide pause and rotate controls",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            pauseRotateUI.showUI()
+        else
+            pauseRotateUI.hideUI()
+        end
+    end,
+})
+
+-- Always Sprint Variables
+local normalSpeed = 16
+local sprintSpeed = 24
+local autoShift = false
+
+local function applyAutoShift(character)
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    if humanoid then
+        if autoShift then
+            humanoid.WalkSpeed = sprintSpeed
+        else
+            humanoid.WalkSpeed = normalSpeed
+        end
+    end
 end
-
-InfoTab:Paragraph({
-	Title = "Features by Tier",
-	Desc = "Premium 👑:\n- Full access to all features\n- Auto-save settings\n- Auto-save last checkpoint touched\n- Spawn at last checkpoint (same server)\n- Continue from exact position\n- Premium replays library\n\nDaily:\n- Full access for 24 hours\n- Free replays library\n- All playback features",
-	Image = "layers",
-	ImageSize = 20,
-	Color = "White"
-})
-
-InfoTab:Paragraph({
-	Title = "About",
-	Desc = string.format("AstrionHUB+ v1.0.7\n\nStatus: %s\nExecutor: %s\nRoblox Premium: %s\n\nAll rights reserved", tierStatus, getExecutor(), premiumStatus),
-	Image = "code",
-	ImageSize = 20,
-	Color = "White"
-})
-
-InfoTab:Paragraph({
-	Title = "Changelog v1.0.7",
-	Desc = "✓ NEW: Checkpoint position save system\n✓ Premium: Auto-save last checkpoint\n✓ Premium: Spawn at last checkpoint\n✓ Checkpoint tracked during movement\n✓ Only saves checkpoint when touched\n✓ Works only in same server (Job ID)\n✓ Updated position info display\n✓ Added checkpoint name in save data\n✓ Clear saved position option\n✓ Enhanced checkpoint workflow",
-	Image = "list",
-	ImageSize = 20,
-	Color = "White"
-})
-
--- ============================================================
--- LOAD SAVED SETTINGS (PREMIUM ONLY)
--- ============================================================
-
-if userTier == "PREMIUM" then
-	task.spawn(function()
-		task.wait(1)
-		local settings = loadSettings()
-		
-		if settings.theme then
-			pcall(function() WindUI:SetTheme(settings.theme) end)
-		end
-		
-		if settings.transparency then
-			pcall(function()
-				WindUI.TransparencyValue = tonumber(settings.transparency)
-				Window:ToggleTransparency(tonumber(settings.transparency) > 0)
-			end)
-		end
-		
-		if settings.antiAfkEnabled ~= nil then
-			antiAfkEnabled = settings.antiAfkEnabled
-		end
-		
-		if settings.fullBrightEnabled ~= nil then
-			fullBrightEnabled = settings.fullBrightEnabled
-			if fullBrightEnabled then
-				lighting.Ambient = Color3.fromRGB(255, 255, 255)
-				lighting.Brightness = 2
-				lighting.ColorShift_Bottom = Color3.fromRGB(255, 255, 255)
-				lighting.ColorShift_Top = Color3.fromRGB(255, 255, 255)
-				lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
-				lighting.ClockTime = 14
-				lighting.FogEnd = 100000
-				lighting.FogStart = 0
-				lighting.GlobalShadows = false
-			end
-		end
-		
-		if settings.intervalFlipEnabled ~= nil then
-			intervalFlipEnabled = settings.intervalFlipEnabled
-		end
-		
-		if settings.autoRespawn ~= nil then
-			autoRespawn = settings.autoRespawn
-		end
-		
-		if settings.autoHeal ~= nil then
-			autoHeal = settings.autoHeal
-		end
-		
-		if settings.autoDetectCheckpoint ~= nil then
-			autoDetectCheckpoint = settings.autoDetectCheckpoint
-		end
-		
-		if settings.cpBeamVisual ~= nil then
-			cpBeamVisual = settings.cpBeamVisual
-		end
-		
-		if settings.delayAfterCheckpoint then
-			delayAfterCheckpoint = settings.delayAfterCheckpoint
-		end
-		
-		if settings.cpDetectionRadius then
-			cpDetectionRadius = settings.cpDetectionRadius
-		end
-		
-		if settings.cpKeyword then
-			cpKeyword = settings.cpKeyword
-		end
-		
-		WindUI:Notify({
-			Title = "Premium Settings Loaded 👑",
-			Content = "Your saved settings have been restored",
-			Duration = 3,
-			Icon = "crown"
-		})
-	end)
-end
-
--- ============================================================
--- ANTI-AFK HANDLER
--- ============================================================
-
-Players.LocalPlayer.Idled:Connect(function()
-	if antiAfkEnabled then
-		local v = game:GetService("VirtualUser")
-		v:CaptureController()
-		v:ClickButton2(Vector2.new())
-	end
-end)
-
--- ============================================================
--- CHARACTER RESPAWN HANDLER
--- ============================================================
 
 player.CharacterAdded:Connect(function(char)
-	task.wait(0.5)
-	onCharacterAdded(char)
-	setupMovement(char)
-	checkpointsReached = {}
-	
-	-- If auto loop is active, resume after respawn
-	if autoLoopSelectedActive then
-		task.wait(1)
-		WindUI:Notify({
-			Title = "Auto Loop Active",
-			Content = "Resuming auto loop after respawn",
-			Duration = 2,
-			Icon = "repeat"
-		})
-	end
+    char:WaitForChild("Humanoid")
+    task.wait(0.5)
+    if autoShift then
+        applyAutoShift(char)
+    end
 end)
 
--- ============================================================
--- AUTO-SAVE POSITION (PREMIUM ONLY)
--- ============================================================
-
-if userTier == "PREMIUM" then
-	task.spawn(function()
-		while task.wait(30) do
-			if currentReplayToken and currentReplayIndex then
-				savePositionData()
-			end
-		end
-	end)
-end
-
--- ============================================================
--- CLEANUP ON GAME LEAVE
--- ============================================================
-
-game:GetService("Players").PlayerRemoving:Connect(function(plr)
-	if plr == player then
-		if userTier == "PREMIUM" then
-			savePositionData()
-		end
-		destroyBeam()
-		if animConn then
-			pcall(function() animConn:Disconnect() end)
-		end
-	end
-end)
-
--- ============================================================
--- FINAL NOTIFICATION
--- ============================================================
-
-local notifContent = "AstrionHUB+ v1.0.7 ready\n\n"
-if userTier == "PREMIUM" then
-	notifContent = notifContent .. "Premium Access 👑\n"
-	local posData = loadPositionData()
-	if posData then
-		if posData.lastCheckpoint then
-			notifContent = notifContent .. "Last checkpoint: " .. posData.lastCheckpoint.name .. "\n"
-		end
-		if posData.jobId == game.JobId then
-			notifContent = notifContent .. "Same server detected!\n"
-		else
-			notifContent = notifContent .. "Different server (rejoin to continue)\n"
-		end
-	end
-	notifContent = notifContent .. "All features loaded\n"
-elseif userTier == "DAILY" then
-	notifContent = notifContent .. "Daily active\n" .. formatTime(getRemainingDailyTime()) .. " remaining\n"
-end
-notifContent = notifContent .. "\nRoblox Premium: " .. premiumStatus
-notifContent = notifContent .. "\n\nNew: Checkpoint Position Save"
-
-WindUI:Notify({
-	Title = tierStatus,
-	Content = notifContent,
-	Duration = 6,
-	Icon = userTier == "PREMIUM" and "crown" or (userTier == "DAILY" and "clock" or "check-circle")
+-- Always Sprint Toggle
+local AlwaysSprintToggle = AutoWalkTab:Toggle({
+    Title = "Always Sprint",
+    Desc = "Enable automatic sprint mode",
+    Default = false,
+    Callback = function(Value)
+        autoShift = Value
+        if autoShift then
+            WindUI:Notify({
+                Title = "Always Sprint",
+                Content = "Sprint Mode Aktif ✅",
+                Duration = 3,
+                Icon = "lucide:zap"
+            })
+        else
+            WindUI:Notify({
+                Title = "Always Sprint",
+                Content = "Sprint Mode Nonaktif ❌",
+                Duration = 3,
+                Icon = "lucide:zap-off"
+            })
+        end
+        if player.Character then
+            applyAutoShift(player.Character)
+        end
+    end,
 })
 
-print("=== LOADED SUCCESSFULLY ===")
-print("Version: 1.0.7 - AstrionHUB+")
-print("User:", player.Name)
-print("User ID:", player.UserId)
-print("Status:", tierStatus)
-print("Tier:", userTier)
-print("Executor:", getExecutor())
-print("Roblox Premium:", premiumStatus)
-print("Replays:", #savedReplays)
-if userTier == "DAILY" then
-	print("Daily Time:", formatTime(getRemainingDailyTime()))
+-- Speed Slider
+local SpeedSlider = AutoWalkTab:Slider({
+    Title = "⚡ Set Speed",
+    Desc = "Adjust playback speed",
+    Min = 0.5,
+    Max = 1.2,
+    Default = 1.0,
+    Decimals = 1,
+    Callback = function(Value)
+        playbackSpeed = Value
+        local speedText = "Normal"
+        if Value < 1.0 then
+            speedText = "Lambat (" .. string.format("%.1f", Value) .. "x)"
+        elseif Value > 1.0 then
+            speedText = "Cepat (" .. string.format("%.1f", Value) .. "x)"
+        else
+            speedText = "Normal (" .. Value .. "x)"
+        end
+    end,
+})
+
+AutoWalkTab:Section({
+    Title = "Auto Walk (Manual)",
+    Icon = "lucide:hand"
+})
+
+-- Spawnpoint Toggle
+local SCPToggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Spawnpoint Route 1)",
+    Desc = "Walk from spawnpoint Route 1",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("spawnpoint_jalur_1.json", 1)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+local SCPToggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Spawnpoint Route 2)",
+    Desc = "Walk from spawnpoint Route 2",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("spawnpoint_jalur_2.json", 2)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+local SCPToggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Spawnpoint Route 3)",
+    Desc = "Walk from spawnpoint Route 3",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("spawnpoint_jalur_3.json", 3)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+-- Checkpoint 1 Toggle
+local CP1Toggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Checkpoint 1)",
+    Desc = "Walk from checkpoint 1",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("checkpoint_1.json", 4)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+-- Checkpoint 2 Toggle
+local CP2Toggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Checkpoint 2)",
+    Desc = "Walk from checkpoint 2",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("checkpoint_2.json", 5)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+-- Checkpoint 3 Toggle
+local CP3Toggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Checkpoint 3)",
+    Desc = "Walk from checkpoint 3",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("checkpoint_3.json", 6)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+-- Checkpoint 4 Toggle
+local CP4Toggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Checkpoint 4 Route 1)",
+    Desc = "Walk from checkpoint 4 Route 1",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("checkpoint_4_jalur_1.json", 7)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+local CP4Toggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Checkpoint 4 Route 2)",
+    Desc = "Walk from checkpoint 4 route 2",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("checkpoint_4_jalur_2.json", 8)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+-- Checkpoint 5 Toggle
+local CP5Toggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Checkpoint 5)",
+    Desc = "Walk from checkpoint 5",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("checkpoint_5.json", 9)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+-------------------------------------------------------------
+-- VISUAL TAB
+-------------------------------------------------------------
+VisualTab:Section({
+    Title = "Time Menu",
+    Icon = "lucide:clock"
+})
+
+local Lighting = game:GetService("Lighting")
+
+-- Time Slider
+local TimeSlider = VisualTab:Slider({
+    Title = "🕒 Time Changer",
+    Desc = "Change game time",
+    Min = 0,
+    Max = 24,
+    Default = Lighting.ClockTime,
+    Decimals = 0,
+    Callback = function(Value)
+        Lighting.ClockTime = Value
+        if Value >= 6 and Value < 18 then
+            Lighting.Brightness = 2
+            Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 200)
+        else
+            Lighting.Brightness = 0.5
+            Lighting.OutdoorAmbient = Color3.fromRGB(50, 50, 100)
+        end
+    end,
+})
+
+-------------------------------------------------------------
+-- RUN ANIMATION TAB
+-------------------------------------------------------------
+RunAnimationTab:Section({
+    Title = "Animation Pack List",
+    Icon = "lucide:sparkles"
+})
+
+local RunAnimations = {
+    ["Run Animation 1"] = {
+        Idle1   = "rbxassetid://122257458498464",
+        Idle2   = "rbxassetid://102357151005774",
+        Walk    = "http://www.roblox.com/asset/?id=18537392113",
+        Run     = "rbxassetid://82598234841035",
+        Jump    = "rbxassetid://75290611992385",
+        Fall    = "http://www.roblox.com/asset/?id=11600206437",
+        Climb   = "http://www.roblox.com/asset/?id=10921257536",
+        Swim    = "http://www.roblox.com/asset/?id=10921264784",
+        SwimIdle= "http://www.roblox.com/asset/?id=10921265698"
+    },
+    ["Run Animation 2"] = {
+        Idle1   = "rbxassetid://122257458498464",
+        Idle2   = "rbxassetid://102357151005774",
+        Walk    = "rbxassetid://122150855457006",
+        Run     = "rbxassetid://82598234841035",
+        Jump    = "rbxassetid://75290611992385",
+        Fall    = "rbxassetid://98600215928904",
+        Climb   = "rbxassetid://88763136693023",
+        Swim    = "rbxassetid://133308483266208",
+        SwimIdle= "rbxassetid://109346520324160"
+    },
+    ["Run Animation 3"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=18537376492",
+        Idle2   = "http://www.roblox.com/asset/?id=18537371272",
+        Walk    = "http://www.roblox.com/asset/?id=18537392113",
+        Run     = "http://www.roblox.com/asset/?id=18537384940",
+        Jump    = "http://www.roblox.com/asset/?id=18537380791",
+        Fall    = "http://www.roblox.com/asset/?id=18537367238",
+        Climb   = "http://www.roblox.com/asset/?id=10921271391",
+        Swim    = "http://www.roblox.com/asset/?id=99384245425157",
+        SwimIdle= "http://www.roblox.com/asset/?id=113199415118199"
+    },
+    ["Run Animation 4"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=118832222982049",
+        Idle2   = "http://www.roblox.com/asset/?id=76049494037641",
+        Walk    = "http://www.roblox.com/asset/?id=92072849924640",
+        Run     = "http://www.roblox.com/asset/?id=72301599441680",
+        Jump    = "http://www.roblox.com/asset/?id=104325245285198",
+        Fall    = "http://www.roblox.com/asset/?id=121152442762481",
+        Climb   = "http://www.roblox.com/asset/?id=507765644",
+        Swim    = "http://www.roblox.com/asset/?id=99384245425157",
+        SwimIdle= "http://www.roblox.com/asset/?id=113199415118199"
+    },
+    ["Run Animation 5"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=656117400",
+        Idle2   = "http://www.roblox.com/asset/?id=656118341",
+        Walk    = "http://www.roblox.com/asset/?id=656121766",
+        Run     = "http://www.roblox.com/asset/?id=656118852",
+        Jump    = "http://www.roblox.com/asset/?id=656117878",
+        Fall    = "http://www.roblox.com/asset/?id=656115606",
+        Climb   = "http://www.roblox.com/asset/?id=656114359",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 6"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616006778",
+        Idle2   = "http://www.roblox.com/asset/?id=616008087",
+        Walk    = "http://www.roblox.com/asset/?id=616013216",
+        Run     = "http://www.roblox.com/asset/?id=616010382",
+        Jump    = "http://www.roblox.com/asset/?id=616008936",
+        Fall    = "http://www.roblox.com/asset/?id=616005863",
+        Climb   = "http://www.roblox.com/asset/?id=616003713",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 7"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=1083195517",
+        Idle2   = "http://www.roblox.com/asset/?id=1083214717",
+        Walk    = "http://www.roblox.com/asset/?id=1083178339",
+        Run     = "http://www.roblox.com/asset/?id=1083216690",
+        Jump    = "http://www.roblox.com/asset/?id=1083218792",
+        Fall    = "http://www.roblox.com/asset/?id=1083189019",
+        Climb   = "http://www.roblox.com/asset/?id=1083182000",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 8"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616136790",
+        Idle2   = "http://www.roblox.com/asset/?id=616138447",
+        Walk    = "http://www.roblox.com/asset/?id=616146177",
+        Run     = "http://www.roblox.com/asset/?id=616140816",
+        Jump    = "http://www.roblox.com/asset/?id=616139451",
+        Fall    = "http://www.roblox.com/asset/?id=616134815",
+        Climb   = "http://www.roblox.com/asset/?id=616133594",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 9"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616088211",
+        Idle2   = "http://www.roblox.com/asset/?id=616089559",
+        Walk    = "http://www.roblox.com/asset/?id=616095330",
+        Run     = "http://www.roblox.com/asset/?id=616091570",
+        Jump    = "http://www.roblox.com/asset/?id=616090535",
+        Fall    = "http://www.roblox.com/asset/?id=616087089",
+        Climb   = "http://www.roblox.com/asset/?id=616086039",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 10"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=910004836",
+        Idle2   = "http://www.roblox.com/asset/?id=910009958",
+        Walk    = "http://www.roblox.com/asset/?id=910034870",
+        Run     = "http://www.roblox.com/asset/?id=910025107",
+        Jump    = "http://www.roblox.com/asset/?id=910016857",
+        Fall    = "http://www.roblox.com/asset/?id=910001910",
+        Climb   = "http://www.roblox.com/asset/?id=616086039",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 11"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=742637544",
+        Idle2   = "http://www.roblox.com/asset/?id=742638445",
+        Walk    = "http://www.roblox.com/asset/?id=742640026",
+        Run     = "http://www.roblox.com/asset/?id=742638842",
+        Jump    = "http://www.roblox.com/asset/?id=742637942",
+        Fall    = "http://www.roblox.com/asset/?id=742637151",
+        Climb   = "http://www.roblox.com/asset/?id=742636889",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 12"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616111295",
+        Idle2   = "http://www.roblox.com/asset/?id=616113536",
+        Walk    = "http://www.roblox.com/asset/?id=616122287",
+        Run     = "http://www.roblox.com/asset/?id=616117076",
+        Jump    = "http://www.roblox.com/asset/?id=616115533",
+        Fall    = "http://www.roblox.com/asset/?id=616108001",
+        Climb   = "http://www.roblox.com/asset/?id=616104706",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 13"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=657595757",
+        Idle2   = "http://www.roblox.com/asset/?id=657568135",
+        Walk    = "http://www.roblox.com/asset/?id=657552124",
+        Run     = "http://www.roblox.com/asset/?id=657564596",
+        Jump    = "http://www.roblox.com/asset/?id=658409194",
+        Fall    = "http://www.roblox.com/asset/?id=657600338",
+        Climb   = "http://www.roblox.com/asset/?id=658360781",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 14"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616158929",
+        Idle2   = "http://www.roblox.com/asset/?id=616160636",
+        Walk    = "http://www.roblox.com/asset/?id=616168032",
+        Run     = "http://www.roblox.com/asset/?id=616163682",
+        Jump    = "http://www.roblox.com/asset/?id=616161997",
+        Fall    = "http://www.roblox.com/asset/?id=616157476",
+        Climb   = "http://www.roblox.com/asset/?id=616156119",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 15"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=845397899",
+        Idle2   = "http://www.roblox.com/asset/?id=845400520",
+        Walk    = "http://www.roblox.com/asset/?id=845403856",
+        Run     = "http://www.roblox.com/asset/?id=845386501",
+        Jump    = "http://www.roblox.com/asset/?id=845398858",
+        Fall    = "http://www.roblox.com/asset/?id=845396048",
+        Climb   = "http://www.roblox.com/asset/?id=845392038",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 16"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=782841498",
+        Idle2   = "http://www.roblox.com/asset/?id=782845736",
+        Walk    = "http://www.roblox.com/asset/?id=782843345",
+        Run     = "http://www.roblox.com/asset/?id=782842708",
+        Jump    = "http://www.roblox.com/asset/?id=782847020",
+        Fall    = "http://www.roblox.com/asset/?id=782846423",
+        Climb   = "http://www.roblox.com/asset/?id=782843869",
+        Swim    = "http://www.roblox.com/asset/?id=18537389531",
+        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
+    },
+    ["Run Animation 17"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=891621366",
+        Idle2   = "http://www.roblox.com/asset/?id=891633237",
+        Walk    = "http://www.roblox.com/asset/?id=891667138",
+        Run     = "http://www.roblox.com/asset/?id=891636393",
+        Jump    = "http://www.roblox.com/asset/?id=891627522",
+        Fall    = "http://www.roblox.com/asset/?id=891617961",
+        Climb   = "http://www.roblox.com/asset/?id=891609353",
+        Swim    = "http://www.roblox.com/asset/?id=18537389531",
+        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
+    },
+    ["Run Animation 18"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=750781874",
+        Idle2   = "http://www.roblox.com/asset/?id=750782770",
+        Walk    = "http://www.roblox.com/asset/?id=750785693",
+        Run     = "http://www.roblox.com/asset/?id=750783738",
+        Jump    = "http://www.roblox.com/asset/?id=750782230",
+        Fall    = "http://www.roblox.com/asset/?id=750780242",
+        Climb   = "http://www.roblox.com/asset/?id=750779899",
+        Swim    = "http://www.roblox.com/asset/?id=18537389531",
+        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
+    },
+}
+
+local OriginalAnimations = {}
+local CurrentPack = nil
+
+local function SaveOriginalAnimations(Animate)
+    OriginalAnimations = {}
+    for _, child in ipairs(Animate:GetDescendants()) do
+        if child:IsA("Animation") then
+            OriginalAnimations[child] = child.AnimationId
+        end
+    end
 end
-if userTier == "PREMIUM" then
-	print("Settings: Auto-Save Enabled")
-	print("Position: Auto-Save Enabled")
-	local posData = loadPositionData()
-	if posData then
-		if posData.lastCheckpoint then
-			print("Last Checkpoint:", posData.lastCheckpoint.name)
-		end
-		if posData.jobId == game.JobId then
-			print("Server Match: YES - Can continue from checkpoint")
-		else
-			print("Server Match: NO - Need to rejoin same server")
-		end
-	end
+
+local function ApplyAnimations(Animate, Humanoid, AnimPack)
+    Animate.idle.Animation1.AnimationId = AnimPack.Idle1
+    Animate.idle.Animation2.AnimationId = AnimPack.Idle2
+    Animate.walk.WalkAnim.AnimationId   = AnimPack.Walk
+    Animate.run.RunAnim.AnimationId     = AnimPack.Run
+    Animate.jump.JumpAnim.AnimationId   = AnimPack.Jump
+    Animate.fall.FallAnim.AnimationId   = AnimPack.Fall
+    Animate.climb.ClimbAnim.AnimationId = AnimPack.Climb
+    Animate.swim.Swim.AnimationId       = AnimPack.Swim
+    Animate.swimidle.SwimIdle.AnimationId = AnimPack.SwimIdle
+    Humanoid.Jump = true
 end
-print("\n=== NEW FEATURES v1.0.7 ===")
-print("- NEW: Checkpoint Position Save System")
-print("- Auto-save last checkpoint touched")
-print("- Spawn at last checkpoint (Premium)")
-print("- Checkpoint tracked during movement")
-print("- Server-specific position save")
-print("- Enhanced position info display")
-print("===========================")
+
+local function RestoreOriginal()
+    for anim, id in pairs(OriginalAnimations) do
+        if anim and anim:IsA("Animation") then
+            anim.AnimationId = id
+        end
+    end
+end
+
+local function SetupCharacter(Char)
+    local Animate = Char:WaitForChild("Animate")
+    local Humanoid = Char:WaitForChild("Humanoid")
+    SaveOriginalAnimations(Animate)
+    if CurrentPack then
+        ApplyAnimations(Animate, Humanoid, CurrentPack)
+    end
+end
+
+Players.LocalPlayer.CharacterAdded:Connect(function(Char)
+    task.wait(1)
+    SetupCharacter(Char)
+end)
+
+if Players.LocalPlayer.Character then
+    SetupCharacter(Players.LocalPlayer.Character)
+end
+
+-- Create toggles for all animation packs
+for i = 1, 18 do
+    local name = "Run Animation " .. i
+    local pack = RunAnimations[name]
+
+    RunAnimationTab:Toggle({
+        Title = name,
+        Desc = "Apply " .. name,
+        Default = false,
+        Callback = function(Value)
+            if Value then
+                CurrentPack = pack
+            elseif CurrentPack == pack then
+                CurrentPack = nil
+                RestoreOriginal()
+            end
+
+            local Char = Players.LocalPlayer.Character
+            if Char and Char:FindFirstChild("Animate") and Char:FindFirstChild("Humanoid") then
+                if CurrentPack then
+                    ApplyAnimations(Char.Animate, Char.Humanoid, CurrentPack)
+                else
+                    RestoreOriginal()
+                end
+            end
+        end,
+    })
+end
+
+-------------------------------------------------------------
+-- UPDATE SCRIPT TAB
+-------------------------------------------------------------
+UpdateTab:Section({
+    Title = "Update Script Menu",
+    Icon = "lucide:refresh-cw"
+})
+
+local updateEnabled = false
+local stopUpdate = {false}
+
+-- Create label for file checking status
+local updateStatusParagraph = UpdateTab:Paragraph({
+    Title = "File Status",
+    Desc = "Pengecekan file...",
+    Color = "Yellow"
+})
+
+-- Task for checking JSON files during startup
+task.spawn(function()
+    for i, f in ipairs(jsonFiles) do
+        local ok = EnsureJsonFile(f)
+        local status = (ok and "✔ Proses Cek File: " or "❌ Gagal: ") .. " (" .. i .. "/" .. #jsonFiles .. ")"
+        updateStatusParagraph:Set({
+            Title = "File Status",
+            Desc = status,
+            Color = ok and "Green" or "Red"
+        })
+        task.wait(0.5)
+    end
+    updateStatusParagraph:Set({
+        Title = "File Status",
+        Desc = "✔ Semua file aman",
+        Color = "Green"
+    })
+end)
+
+-- Update Script Toggle
+local UpdateToggle = UpdateTab:Toggle({
+    Title = "Mulai Update Script",
+    Desc = "Download ulang semua file JSON",
+    Default = false,
+    Callback = function(state)
+        if state then
+            updateEnabled = true
+            stopUpdate[1] = false
+            task.spawn(function()
+                updateStatusParagraph:Set({
+                    Title = "Update Status",
+                    Desc = "🔄 Proses update file...",
+                    Color = "Yellow"
+                })
+                
+                -- Delete all existing JSON files
+                for _, f in ipairs(jsonFiles) do
+                    local savePath = jsonFolder .. "/" .. f
+                    if isfile(savePath) then
+                        delfile(savePath)
+                    end
+                end
+                
+                -- Re-download all JSON files
+                for i, f in ipairs(jsonFiles) do
+                    if stopUpdate[1] then break end
+                    
+                    WindUI:Notify({
+                        Title = "Update Script",
+                        Content = "Proses Update " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
+                        Duration = 2,
+                        Icon = "lucide:download",
+                    })
+                    
+                    local ok, res = pcall(function() return game:HttpGet(baseURL..f) end)
+                    if ok and res and #res > 0 then
+                        writefile(jsonFolder.."/"..f, res)
+                        updateStatusParagraph:Set({
+                            Title = "Update Status",
+                            Desc = "📥 Proses Update: " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
+                            Color = "Blue"
+                        })
+                    else
+                        WindUI:Notify({
+                            Title = "Update Script",
+                            Content = "❌ Update script gagal untuk " .. f,
+                            Duration = 3,
+                            Icon = "lucide:x-circle",
+                        })
+                        updateStatusParagraph:Set({
+                            Title = "Update Status",
+                            Desc = "❌ Gagal: " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
+                            Color = "Red"
+                        })
+                    end
+                    task.wait(0.3)
+                end
+                
+                -- Update result notification
+                if not stopUpdate[1] then
+                    WindUI:Notify({
+                        Title = "Update Script",
+                        Content = "Update berhasil!",
+                        Duration = 5,
+                        Icon = "lucide:check-check",
+                    })
+                else
+                    WindUI:Notify({
+                        Title = "Update Script",
+                        Content = "❌ Update dibatalkan",
+                        Duration = 3,
+                        Icon = "lucide:x-circle",
+                    })
+                end
+                
+                -- Re-check all files after updating
+                for i, f in ipairs(jsonFiles) do
+                    local ok = EnsureJsonFile(f)
+                    updateStatusParagraph:Set({
+                        Title = "File Check",
+                        Desc = (ok and "✔ Cek File: " or "❌ Failed: ") .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
+                        Color = ok and "Green" or "Red"
+                    })
+                    task.wait(0.3)
+                end
+                updateStatusParagraph:Set({
+                    Title = "File Status",
+                    Desc = "✔ Semua file aman",
+                    Color = "Green"
+                })
+            end)
+        else
+            updateEnabled = false
+            stopUpdate[1] = true
+        end
+    end,
+})
+
+-------------------------------------------------------------
+-- CREDITS TAB
+-------------------------------------------------------------
+CreditsTab:Section({
+    Title = "Credits List",
+    Icon = "lucide:users"
+})
+
+-- UI Credit
+CreditsTab:Paragraph({
+    Title = "UI Library",
+    Desc = "WindUI Interface by .ftgs",
+    Color = "Blue"
+})
+
+-- Developer Credit
+CreditsTab:Paragraph({
+    Title = "Developer",
+    Desc = "Script by RullzsyHUB",
+    Color = "Purple"
+})
+
+-- Social Media
+CreditsTab:Paragraph({
+    Title = "Social Media",
+    Desc = "Follow TikTok: @rullzsy99",
+    Color = "Green",
+    Buttons = {
+        {
+            Title = "Copy TikTok",
+            Icon = "lucide:copy",
+            Callback = function()
+                if setclipboard then
+                    setclipboard("@rullzsy99")
+                    WindUI:Notify({
+                        Title = "Credits",
+                        Content = "TikTok username copied!",
+                        Duration = 3,
+                        Icon = "lucide:check"
+                    })
+                else
+                    WindUI:Notify({
+                        Title = "Error",
+                        Content = "Clipboard not supported",
+                        Duration = 3,
+                        Icon = "lucide:x"
+                    })
+                end
+            end
+        }
+    }
+})
+
+-------------------------------------------------------------
+-- FINAL NOTIFICATION
+-------------------------------------------------------------
+WindUI:Notify({
+    Title = "Script Loaded",
+    Content = "RullzsyHUB | Mount Yahayuk berhasil dimuat!",
+    Duration = 5,
+    Icon = "lucide:check-circle"
+})
+
+-- Add version tag
+Window:Tag({
+    Title = "v1.0.0",
+    Color = Color3.fromHex("#30ff6a"),
+    Radius = 8,
+})
