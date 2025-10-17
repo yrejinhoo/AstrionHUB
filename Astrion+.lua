@@ -1,8 +1,7 @@
-
 -- ============================================================
--- ASTRIONHUB+ - SECURED WINDUI EDITION v1.0.5
+-- ASTRIONHUB+ - SECURED WINDUI EDITION v1.0.6
 -- Features: Key System, Whitelist, Discord Webhook, Server Tools
--- Updated: Enhanced Replay System with Checkpoint Detection
+-- Updated: Fixed Checkpoint Detection & Premium Position Save
 -- ============================================================
 
 -- ============================================================
@@ -46,9 +45,10 @@ local player = Players.LocalPlayer
 
 local DAILY_DATA_FILE = "AstrionDailyData.json"
 local SETTINGS_FILE = "AstrionSettings.json"
+local POSITION_SAVE_FILE = "AstrionPositionSave.json"
 local userTier = "NONE"
 local dailyStartTime = nil
-local dailyDuration = 86400 -- 24 hours
+local dailyDuration = 86400
 local character = nil
 local humanoidRootPart = nil
 local isPaused = false
@@ -82,6 +82,14 @@ local cpKeyword = "Checkpoint"
 local currentBeam = nil
 local isWalkingToCheckpoint = false
 local lastPausedFrameIndex = 1
+local cpDetectionActive = false
+local checkpointsReached = {}
+
+-- Premium Position Save Variables
+local savedPosition = nil
+local savedJobId = nil
+local savedPlaceId = nil
+local InfoTabPositionParagraph = nil
 
 -- Save original lighting
 local originalLighting = {
@@ -147,7 +155,7 @@ local function sendWebhook(title, description, color, fields)
 			["description"] = description,
 			["color"] = color or 3447003,
 			["fields"] = fields or {},
-			["footer"] = {["text"] = "AstrionHUB+ v1.0.5 - Security System"},
+			["footer"] = {["text"] = "AstrionHUB+ v1.0.6 - Security System"},
 			["timestamp"] = os.date("!%Y-%m-%dT%H:%M:%S")
 		}}
 	}
@@ -304,6 +312,74 @@ local function loadSettings()
 	return {}
 end
 
+local function savePositionData()
+	if userTier ~= "PREMIUM" then return end
+	if not writefile or not humanoidRootPart then return end
+	
+	local posData = {
+		userId = player.UserId,
+		jobId = game.JobId,
+		placeId = game.PlaceId,
+		position = {
+			humanoidRootPart.Position.X,
+			humanoidRootPart.Position.Y,
+			humanoidRootPart.Position.Z
+		},
+		replayIndex = currentReplayIndex,
+		frameIndex = currentFrameIndex,
+		timestamp = os.time()
+	}
+	
+	pcall(function()
+		writefile(POSITION_SAVE_FILE, HttpService:JSONEncode(posData))
+	end)
+end
+
+local function loadPositionData()
+	if userTier ~= "PREMIUM" then return nil end
+	if not readfile or not isfile or not isfile(POSITION_SAVE_FILE) then return nil end
+	
+	local success, content = pcall(function()
+		return readfile(POSITION_SAVE_FILE)
+	end)
+	
+	if success and content then
+		local data = HttpService:JSONDecode(content)
+		if data and data.userId == player.UserId and data.jobId == game.JobId and data.placeId == game.PlaceId then
+			return data
+		end
+	end
+	return nil
+end
+
+local function updatePositionInfo()
+	if not InfoTabPositionParagraph then return end
+	
+	local posData = loadPositionData()
+	if posData then
+		local replayName = "Unknown"
+		if posData.replayIndex and savedReplays[posData.replayIndex] then
+			replayName = savedReplays[posData.replayIndex].Name
+		end
+		
+		local desc = string.format(
+			"Saved Position Found!\n\nReplay: %s\nFrame: %d\nPosition: %.1f, %.1f, %.1f\nServer: %s\n\nClick 'Start' to continue from this position",
+			replayName,
+			posData.frameIndex or 1,
+			posData.position[1], posData.position[2], posData.position[3],
+			posData.jobId
+		)
+		
+		pcall(function()
+			InfoTabPositionParagraph:SetDesc(desc)
+		end)
+	else
+		pcall(function()
+			InfoTabPositionParagraph:SetDesc("No saved position for this server\n\nPlay a replay to save your progress automatically")
+		end)
+	end
+end
+
 local function authenticateUser()
 	local premiumWhitelist = loadPremiumWhitelist()
 	local userId = player.UserId
@@ -397,7 +473,7 @@ local function createKeySystemUI()
 	
 	KeyTab:Paragraph({
 		Title = "Key Types",
-		Desc = "Premium - Full access to all features + Settings save\nDaily - 24 hour access to all features",
+		Desc = "Premium - Full access + Auto-save position & settings\nDaily - 24 hour access to all features",
 		Image = "key",
 		ImageSize = 20,
 		Color = "White"
@@ -513,7 +589,7 @@ end
 savedReplays = loadReplays()
 
 -- ============================================================
--- CHECKPOINT DETECTION FUNCTIONS
+-- CHECKPOINT DETECTION FUNCTIONS (FIXED)
 -- ============================================================
 
 local function findNearestCheckpoint()
@@ -524,10 +600,21 @@ local function findNearestCheckpoint()
 	
 	for _, descendant in ipairs(Workspace:GetDescendants()) do
 		if descendant:IsA("BasePart") and descendant.Name:lower():find(cpKeyword:lower()) then
-			local distance = (descendant.Position - humanoidRootPart.Position).Magnitude
-			if distance < nearestDistance then
-				nearestDistance = distance
-				nearestCP = descendant
+			-- Check if this checkpoint was already reached
+			local alreadyReached = false
+			for _, reachedCP in ipairs(checkpointsReached) do
+				if reachedCP == descendant then
+					alreadyReached = true
+					break
+				end
+			end
+			
+			if not alreadyReached then
+				local distance = (descendant.Position - humanoidRootPart.Position).Magnitude
+				if distance < nearestDistance then
+					nearestDistance = distance
+					nearestCP = descendant
+				end
 			end
 		end
 	end
@@ -707,6 +794,9 @@ local function playReplay(data, replayIdx, startFromFrame)
 	activeStop = nil
 	pausedPosition = nil
 	isWalkingToCheckpoint = false
+	cpDetectionActive = autoDetectCheckpoint
+	checkpointsReached = {}
+	
 	if replayIdx then currentReplayIndex = replayIdx end
 	
 	local hum = character and character:FindFirstChildOfClass("Humanoid")
@@ -728,9 +818,16 @@ local function playReplay(data, replayIdx, startFromFrame)
 		if deathConnection then deathConnection:Disconnect() end
 		activeStop = nil
 		pausedPosition = nil
+		cpDetectionActive = false
 		if animConn then 
 			pcall(function() animConn:Disconnect() end) 
 			animConn = nil 
+		end
+		
+		-- Save position for premium users
+		if userTier == "PREMIUM" then
+			savePositionData()
+			updatePositionInfo()
 		end
 	end
 	
@@ -757,24 +854,29 @@ local function playReplay(data, replayIdx, startFromFrame)
 	while i <= total do
 		if currentReplayToken ~= token then break end
 		
-		-- Checkpoint Detection
-		if autoDetectCheckpoint and not isPaused and not isWalkingToCheckpoint then
+		-- Checkpoint Detection (FIXED)
+		if cpDetectionActive and not isPaused and not isWalkingToCheckpoint then
 			local checkpoint = findNearestCheckpoint()
 			if checkpoint then
+				-- Pause replay
 				isPaused = true
 				isWalkingToCheckpoint = true
 				lastPausedFrameIndex = math.floor(i)
 				stopMovement()
 				
+				-- Mark this checkpoint as reached
+				table.insert(checkpointsReached, checkpoint)
+				
 				WindUI:Notify({
 					Title = "Checkpoint Detected",
-					Content = "Walking to checkpoint...",
+					Content = "Pausing replay, walking to checkpoint...",
 					Duration = 3,
 					Icon = "flag"
 				})
 				
 				createBeamToCheckpoint(checkpoint)
 				
+				-- Walk to checkpoint
 				local success = walkToPosition(checkpoint.Position, token, false)
 				
 				destroyBeam()
@@ -782,16 +884,25 @@ local function playReplay(data, replayIdx, startFromFrame)
 				if success and currentReplayToken == token then
 					WindUI:Notify({
 						Title = "Checkpoint Reached",
-						Content = "Waiting " .. delayAfterCheckpoint .. " seconds...",
+						Content = "Waiting " .. delayAfterCheckpoint .. " seconds before resuming...",
 						Duration = delayAfterCheckpoint,
 						Icon = "check"
 					})
 					
 					task.wait(delayAfterCheckpoint)
 					
+					-- Resume replay
 					if currentReplayToken == token then
 						isWalkingToCheckpoint = false
 						isPaused = false
+						
+						WindUI:Notify({
+							Title = "Resuming Replay",
+							Content = "Continuing from frame " .. lastPausedFrameIndex,
+							Duration = 2,
+							Icon = "play"
+						})
+						
 						startMovement()
 					end
 				else
@@ -800,7 +911,8 @@ local function playReplay(data, replayIdx, startFromFrame)
 			end
 		end
 		
-		if isPaused then
+		-- Manual pause handler
+		if isPaused and not isWalkingToCheckpoint then
 			stopMovement()
 			if not pausedPosition and humanoidRootPart then
 				pausedPosition = humanoidRootPart.Position
@@ -841,6 +953,12 @@ local function playReplay(data, replayIdx, startFromFrame)
 		
 		i = i + currentSpeed
 		currentFrameIndex = math.floor(i)
+		
+		-- Auto-save position every 100 frames for premium users
+		if userTier == "PREMIUM" and currentFrameIndex % 100 == 0 then
+			savePositionData()
+		end
+		
 		task.wait()
 	end
 	
@@ -987,12 +1105,10 @@ end
 -- UI CREATION
 -- ============================================================
 
-local tierIcon = userTier == "PREMIUM" and " [Premium]" or (userTier == "DAILY" and " [Daily]" or "")
-
 local Window = WindUI:CreateWindow({
-	Title = "AstrionHUB+" .. tierIcon,
+	Title = "AstrionHUB+",
 	Icon = "video",
-	Author = player.Name,
+	Author = player.Name .. (userTier == "PREMIUM" and " 👑" or ""),
 	Folder = "AstrionHUBPlus",
 	Size = UDim2.fromOffset(580, 460),
 	Transparent = true,
@@ -1001,9 +1117,9 @@ local Window = WindUI:CreateWindow({
 })
 
 Window:Tag({
-    Title = "v1.0.5",
-    Color = Color3.fromHex("#30ff6a"),
-    Radius = 13,
+	Title = "v1.0.6",
+	Color = Color3.fromHex("#30ff6a"),
+	Radius = 13,
 })
 
 -- ============================================================
@@ -1022,7 +1138,7 @@ ProfileTab:Paragraph({
 	Color = "White"
 })
 
-local tierStatus = userTier == "PREMIUM" and "Premium" or (userTier == "DAILY" and "Daily" or "None")
+local tierStatus = userTier == "PREMIUM" and "Premium 👑" or (userTier == "DAILY" and "Daily" or "None")
 
 ProfileTab:Paragraph({
 	Title = "Security",
@@ -1095,7 +1211,7 @@ ProfileTab:Button({
 })
 
 -- ============================================================
--- MAIN TAB (UPDATED)
+-- MAIN TAB
 -- ============================================================
 
 local MainTab = Window:Tab({Title = "Main", Icon = "play"})
@@ -1148,23 +1264,43 @@ ReplayDropdown = MainTab:Dropdown({
 })
 
 MainTab:Button({
-	Title = "Start",
-	Desc = "Play selected replay (continues from current position if interrupted)",
+	Title = "Start" .. (userTier == "PREMIUM" and " 👑" or ""),
+	Desc = userTier == "PREMIUM" and "Play from saved position (Premium)" or "Play selected replay",
 	Icon = "play",
 	Callback = function()
 		if SelectedReplayIndex and savedReplays[SelectedReplayIndex] then
 			local replay = savedReplays[SelectedReplayIndex]
-			
-			-- If replay was paused/interrupted, continue from last frame
 			local startFrame = 1
-			if currentReplayIndex == SelectedReplayIndex and lastPausedFrameIndex > 1 then
-				startFrame = lastPausedFrameIndex
-				WindUI:Notify({
-					Title = "Continuing",
-					Content = "Resuming from frame " .. startFrame,
-					Duration = 2,
-					Icon = "play"
-				})
+			
+			-- Premium: Load saved position
+			if userTier == "PREMIUM" then
+				local posData = loadPositionData()
+				if posData and posData.replayIndex == SelectedReplayIndex then
+					startFrame = posData.frameIndex or 1
+					
+					-- Teleport to saved position
+					if humanoidRootPart and posData.position then
+						humanoidRootPart.CFrame = CFrame.new(
+							posData.position[1],
+							posData.position[2],
+							posData.position[3]
+						)
+					end
+					
+					WindUI:Notify({
+						Title = "Premium: Continuing",
+						Content = "Resuming from frame " .. startFrame .. "\n" .. replay.Name,
+						Duration = 3,
+						Icon = "crown"
+					})
+				else
+					WindUI:Notify({
+						Title = "Starting",
+						Content = replay.Name,
+						Duration = 2,
+						Icon = "play"
+					})
+				end
 			else
 				WindUI:Notify({
 					Title = "Starting",
@@ -1307,6 +1443,8 @@ MainTab:Button({
 		isPaused = false
 		pausedPosition = nil
 		isWalkingToCheckpoint = false
+		cpDetectionActive = false
+		checkpointsReached = {}
 		WindUI:Notify({Title = "Stopped", Content = "All replays stopped", Duration = 2, Icon = "stop-circle"})
 	end
 })
@@ -1398,7 +1536,7 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- ADVANCED TAB (UPDATED)
+-- ADVANCED TAB
 -- ============================================================
 
 local AdvancedTab = Window:Tab({Title = "Advanced", Icon = "settings"})
@@ -1433,6 +1571,8 @@ AdvancedTab:Toggle({
 		
 		if not Value then
 			destroyBeam()
+			cpDetectionActive = false
+			checkpointsReached = {}
 		end
 		
 		if userTier == "PREMIUM" then
@@ -1568,7 +1708,7 @@ AdvancedTab:Button({
 
 AdvancedTab:Paragraph({
 	Title = "How It Works",
-	Desc = "When enabled, the system will:\n1. Detect checkpoints during replay\n2. Pause replay automatically\n3. Walk to nearest checkpoint\n4. Wait for specified delay\n5. Resume replay from paused position",
+	Desc = "When enabled:\n1. Replay runs normally\n2. System detects checkpoint in radius\n3. Replay pauses automatically\n4. Character walks to checkpoint\n5. Waits for delay duration\n6. Replay resumes from paused frame\n7. Each checkpoint only triggered once",
 	Image = "info",
 	ImageSize = 20,
 	Color = "White"
@@ -1800,6 +1940,7 @@ SettingsTab:Button({
 		pausedPosition = nil
 		lastPausedFrameIndex = 1
 		destroyBeam()
+		checkpointsReached = {}
 		local hum = character and character:FindFirstChildOfClass("Humanoid")
 		if hum then
 			hum:ChangeState(Enum.HumanoidStateType.Dead)
@@ -1831,8 +1972,8 @@ SettingsTab:Button({
 
 if userTier == "PREMIUM" then
 	SettingsTab:Paragraph({
-		Title = "Premium Settings",
-		Desc = "Settings are automatically saved for Premium users",
+		Title = "Premium Settings 👑",
+		Desc = "Settings and position automatically saved",
 		Image = "crown",
 		ImageSize = 20,
 		Color = "White"
@@ -1862,6 +2003,33 @@ if userTier == "PREMIUM" then
 				Duration = 3,
 				Icon = "check-circle"
 			})
+		end
+	})
+	
+	SettingsTab:Button({
+		Title = "Clear Saved Position",
+		Desc = "Delete saved position data",
+		Icon = "trash-2",
+		Callback = function()
+			if delfile and isfile and isfile(POSITION_SAVE_FILE) then
+				pcall(function()
+					delfile(POSITION_SAVE_FILE)
+				end)
+				WindUI:Notify({
+					Title = "Cleared",
+					Content = "Saved position deleted",
+					Duration = 2,
+					Icon = "check"
+				})
+				updatePositionInfo()
+			else
+				WindUI:Notify({
+					Title = "No Data",
+					Content = "No saved position found",
+					Duration = 2,
+					Icon = "info"
+				})
+			end
 		end
 	})
 end
@@ -1934,15 +2102,30 @@ InfoTab:Paragraph({
 
 InfoTab:Paragraph({
 	Title = "Checkpoint Detection",
-	Desc = "Advanced Tab Features:\n- Auto Detect: Pauses replay when checkpoint found\n- CP Beam Visual: Shows direction to checkpoint\n- Walks to checkpoint automatically\n- Continues replay after reaching checkpoint\n- Customizable detection radius and delay",
+	Desc = "Advanced Tab Features:\n- Auto Detect: Pauses replay when checkpoint found\n- CP Beam Visual: Shows direction to checkpoint\n- Walks to checkpoint automatically\n- Continues replay after reaching checkpoint\n- Each checkpoint triggered only once per run\n- Customizable detection radius and delay",
 	Image = "flag",
 	ImageSize = 20,
 	Color = "White"
 })
 
+if userTier == "PREMIUM" then
+	InfoTabPositionParagraph = InfoTab:Paragraph({
+		Title = "Premium Position Save 👑",
+		Desc = "Loading position data...",
+		Image = "crown",
+		ImageSize = 20,
+		Color = "White"
+	})
+	
+	task.spawn(function()
+		task.wait(1)
+		updatePositionInfo()
+	end)
+end
+
 InfoTab:Paragraph({
 	Title = "Features by Tier",
-	Desc = "Premium: Full access + Settings save + Premium replays\nDaily: Full access for 24 hours + Free replays",
+	Desc = "Premium 👑:\n- Full access to all features\n- Auto-save settings\n- Auto-save position per server\n- Continue from last position\n- Premium replays library\n\nDaily:\n- Full access for 24 hours\n- Free replays library\n- All playback features",
 	Image = "layers",
 	ImageSize = 20,
 	Color = "White"
@@ -1950,15 +2133,15 @@ InfoTab:Paragraph({
 
 InfoTab:Paragraph({
 	Title = "About",
-	Desc = string.format("AstrionHUB+ v1.0.5\n\nStatus: %s\nExecutor: %s\nRoblox Premium: %s\n\nAll rights reserved", tierStatus, getExecutor(), premiumStatus),
+	Desc = string.format("AstrionHUB+ v1.0.6\n\nStatus: %s\nExecutor: %s\nRoblox Premium: %s\n\nAll rights reserved", tierStatus, getExecutor(), premiumStatus),
 	Image = "code",
 	ImageSize = 20,
 	Color = "White"
 })
 
 InfoTab:Paragraph({
-	Title = "Changelog v1.0.5",
-	Desc = "✓ Main Tab redesigned with search bar\n✓ Enhanced replay continuation system\n✓ Auto Loop for Selected replays\n✓ Checkpoint auto-detection system\n✓ Visual beam to checkpoints\n✓ Customizable CP detection radius\n✓ Resume from interrupted position\n✓ Improved performance\n✓ Better error handling",
+	Title = "Changelog v1.0.6",
+	Desc = "✓ FIXED: Checkpoint detection logic\n✓ Replay continues after checkpoint\n✓ Each checkpoint triggered once only\n✓ Premium: Auto-save position system\n✓ Premium: Continue from saved position\n✓ Premium: Position tied to Job ID\n✓ Crown icon for Premium users\n✓ Removed [Premium/Daily] tags\n✓ Enhanced checkpoint workflow\n✓ Improved error handling",
 	Image = "list",
 	ImageSize = 20,
 	Color = "White"
@@ -2036,10 +2219,10 @@ if userTier == "PREMIUM" then
 		end
 		
 		WindUI:Notify({
-			Title = "Settings Loaded",
+			Title = "Premium Settings Loaded 👑",
 			Content = "Your saved settings have been restored",
 			Duration = 3,
-			Icon = "check-circle"
+			Icon = "crown"
 		})
 	end)
 end
@@ -2064,6 +2247,7 @@ player.CharacterAdded:Connect(function(char)
 	task.wait(0.5)
 	onCharacterAdded(char)
 	setupMovement(char)
+	checkpointsReached = {}
 	
 	-- If auto loop is active, resume after respawn
 	if autoLoopSelectedActive then
@@ -2078,11 +2262,28 @@ player.CharacterAdded:Connect(function(char)
 end)
 
 -- ============================================================
+-- AUTO-SAVE POSITION (PREMIUM ONLY)
+-- ============================================================
+
+if userTier == "PREMIUM" then
+	task.spawn(function()
+		while task.wait(30) do
+			if currentReplayToken and currentReplayIndex then
+				savePositionData()
+			end
+		end
+	end)
+end
+
+-- ============================================================
 -- CLEANUP ON GAME LEAVE
 -- ============================================================
 
 game:GetService("Players").PlayerRemoving:Connect(function(plr)
 	if plr == player then
+		if userTier == "PREMIUM" then
+			savePositionData()
+		end
 		destroyBeam()
 		if animConn then
 			pcall(function() animConn:Disconnect() end)
@@ -2094,15 +2295,29 @@ end)
 -- FINAL NOTIFICATION
 -- ============================================================
 
+local notifContent = "AstrionHUB+ v1.0.6 ready\n\n"
+if userTier == "PREMIUM" then
+	notifContent = notifContent .. "Premium Access 👑\n"
+	local posData = loadPositionData()
+	if posData then
+		notifContent = notifContent .. "Saved position detected!\n"
+	end
+	notifContent = notifContent .. "All features loaded\n"
+elseif userTier == "DAILY" then
+	notifContent = notifContent .. "Daily active\n" .. formatTime(getRemainingDailyTime()) .. " remaining\n"
+end
+notifContent = notifContent .. "\nRoblox Premium: " .. premiumStatus
+notifContent = notifContent .. "\n\nNew: Fixed Checkpoint System"
+
 WindUI:Notify({
-	Title = tierStatus .. " Access",
-	Content = "AstrionHUB+ v1.0.5 ready\n" .. (userTier == "DAILY" and "Daily active - " .. formatTime(getRemainingDailyTime()) .. " remaining" or "All features loaded successfully") .. "\n\nRoblox Premium: " .. premiumStatus .. "\n\nNew: Checkpoint Detection System",
+	Title = tierStatus,
+	Content = notifContent,
 	Duration = 6,
 	Icon = userTier == "PREMIUM" and "crown" or (userTier == "DAILY" and "clock" or "check-circle")
 })
 
 print("=== LOADED SUCCESSFULLY ===")
-print("Version: 1.0.5 - AstrionHUB+")
+print("Version: 1.0.6 - AstrionHUB+")
 print("User:", player.Name)
 print("User ID:", player.UserId)
 print("Status:", tierStatus)
@@ -2115,11 +2330,17 @@ if userTier == "DAILY" then
 end
 if userTier == "PREMIUM" then
 	print("Settings: Auto-Save Enabled")
+	print("Position: Auto-Save Enabled")
+	local posData = loadPositionData()
+	if posData then
+		print("Saved Position: Found for this server")
+	end
 end
-print("\n=== NEW FEATURES v1.0.5 ===")
-print("- Checkpoint Auto-Detection")
-print("- Visual Beam to Checkpoints")
-print("- Resume from Interrupted Position")
-print("- Enhanced Auto Loop System")
-print("- Search Bar for Replays")
+print("\n=== NEW FEATURES v1.0.6 ===")
+print("- FIXED: Checkpoint Detection System")
+print("- Replay continues after checkpoint")
+print("- Each checkpoint triggered once")
+print("- Premium: Auto-save position")
+print("- Premium: Continue from saved position")
+print("- Crown icon for Premium users")
 print("===========================")
