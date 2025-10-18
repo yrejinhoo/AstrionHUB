@@ -108,7 +108,6 @@ local pausedTime = 0
 local pauseStartTime = 0
 local lastPlaybackTime = 0
 local accumulatedTime = 0
-local isManualMode = false
 local recordedHipHeight = nil
 local currentHipHeight = nil
 local hipHeightOffset = 0
@@ -119,21 +118,7 @@ local leftFootstep = true
 local isFlipped = false
 local FLIP_SMOOTHNESS = 0.05
 local currentFlipRotation = CFrame.new()
-local isFavoriteReplay = false
-
--- Auto Detect Checkpoint Variables
-local autoDetectEnabled = false
-local cpBeamEnabled = false
-local checkpointDelay = 10
-local detectionDistance = 25
-local checkpointKeyword = "Checkpoint"
-local detectedCheckpoints = {}
-local beamParts = {}
-local checkpointBeamConnection = nil
-local isWaitingAtCheckpoint = false
-local checkpointDetectorEnabled = false
-local detectorBeams = {}
-local detectorConnection = nil
+local currentStartIndex = 1
 
 -------------------------------------------------------------
 -- AUTO WALK FUNCTIONS
@@ -282,203 +267,6 @@ local function findSurroundingFrames(data, t)
     return i0, i1, alpha
 end
 
--- Create checkpoint beam visualization
-local function createCheckpointBeam(checkpointPosition)
-    if not cpBeamEnabled or not character or not character:FindFirstChild("HumanoidRootPart") then return end
-    
-    local hrp = character.HumanoidRootPart
-    
-    local beamPart = Instance.new("Part")
-    beamPart.Name = "CheckpointBeam"
-    beamPart.Anchored = true
-    beamPart.CanCollide = false
-    beamPart.Size = Vector3.new(1, 100, 1)
-    beamPart.Position = checkpointPosition
-    beamPart.Transparency = 0.5
-    beamPart.Color = Color3.fromRGB(0, 255, 0)
-    beamPart.Material = Enum.Material.Neon
-    beamPart.Parent = workspace
-    
-    local attach0 = Instance.new("Attachment", hrp)
-    local attach1 = Instance.new("Attachment", beamPart)
-    
-    local beam = Instance.new("Beam")
-    beam.Attachment0 = attach0
-    beam.Attachment1 = attach1
-    beam.Width0 = 0.5
-    beam.Width1 = 0.5
-    beam.Color = ColorSequence.new(Color3.fromRGB(0, 255, 0))
-    beam.FaceCamera = true
-    beam.Parent = hrp
-    
-    table.insert(beamParts, {part = beamPart, attachment0 = attach0, attachment1 = attach1, beam = beam})
-    
-    task.spawn(function()
-        task.wait(5)
-        beam:Destroy()
-        attach0:Destroy()
-        attach1:Destroy()
-        beamPart:Destroy()
-    end)
-end
-
--- Clear all beam parts
-local function clearBeams()
-    for _, beamData in ipairs(beamParts) do
-        if beamData.beam and beamData.beam.Parent then beamData.beam:Destroy() end
-        if beamData.attachment0 and beamData.attachment0.Parent then beamData.attachment0:Destroy() end
-        if beamData.attachment1 and beamData.attachment1.Parent then beamData.attachment1:Destroy() end
-        if beamData.part and beamData.part.Parent then beamData.part:Destroy() end
-    end
-    beamParts = {}
-end
-
--- Clear detector beams
-local function clearDetectorBeams()
-    for _, beamData in ipairs(detectorBeams) do
-        if beamData.beam and beamData.beam.Parent then beamData.beam:Destroy() end
-        if beamData.attachment0 and beamData.attachment0.Parent then beamData.attachment0:Destroy() end
-        if beamData.attachment1 and beamData.attachment1.Parent then beamData.attachment1:Destroy() end
-        if beamData.part and beamData.part.Parent then beamData.part:Destroy() end
-    end
-    detectorBeams = {}
-end
-
--- Create detector beam
-local function createDetectorBeam(checkpointPart)
-    if not character or not character:FindFirstChild("HumanoidRootPart") then return end
-    
-    local hrp = character.HumanoidRootPart
-    
-    local beamPart = Instance.new("Part")
-    beamPart.Name = "DetectorBeam"
-    beamPart.Anchored = true
-    beamPart.CanCollide = false
-    beamPart.Size = Vector3.new(1, 100, 1)
-    beamPart.Position = checkpointPart.Position
-    beamPart.Transparency = 0.5
-    beamPart.Color = Color3.fromRGB(255, 255, 0)
-    beamPart.Material = Enum.Material.Neon
-    beamPart.Parent = workspace
-    
-    local attach0 = Instance.new("Attachment", hrp)
-    local attach1 = Instance.new("Attachment", beamPart)
-    
-    local beam = Instance.new("Beam")
-    beam.Attachment0 = attach0
-    beam.Attachment1 = attach1
-    beam.Width0 = 0.5
-    beam.Width1 = 0.5
-    beam.Color = ColorSequence.new(Color3.fromRGB(255, 255, 0))
-    beam.FaceCamera = true
-    beam.Parent = hrp
-    
-    table.insert(detectorBeams, {part = beamPart, attachment0 = attach0, attachment1 = attach1, beam = beam})
-end
-
--- Checkpoint Detector Function
-local function startCheckpointDetector()
-    if detectorConnection then
-        detectorConnection:Disconnect()
-    end
-    
-    clearDetectorBeams()
-    
-    detectorConnection = RunService.Heartbeat:Connect(function()
-        if not checkpointDetectorEnabled or not character or not character:FindFirstChild("HumanoidRootPart") then
-            return
-        end
-        
-        local hrp = character.HumanoidRootPart
-        local nearbyParts = workspace:GetPartBoundsInRadius(hrp.Position, detectionDistance)
-        
-        clearDetectorBeams()
-        
-        for _, part in ipairs(nearbyParts) do
-            if part:IsA("BasePart") and string.find(string.lower(part.Name), string.lower(checkpointKeyword)) then
-                createDetectorBeam(part)
-            end
-        end
-    end)
-end
-
-local function stopCheckpointDetector()
-    if detectorConnection then
-        detectorConnection:Disconnect()
-        detectorConnection = nil
-    end
-    clearDetectorBeams()
-end
-
--- Check for nearby checkpoint
-local function checkForCheckpoint()
-    if not autoDetectEnabled or not character or not character:FindFirstChild("HumanoidRootPart") then
-        return false, nil
-    end
-    
-    local hrp = character.HumanoidRootPart
-    local nearbyParts = workspace:GetPartBoundsInRadius(hrp.Position, detectionDistance)
-    
-    for _, part in ipairs(nearbyParts) do
-        if part:IsA("BasePart") and string.find(string.lower(part.Name), string.lower(checkpointKeyword)) then
-            local partId = part:GetFullName()
-            if not detectedCheckpoints[partId] then
-                detectedCheckpoints[partId] = true
-                if cpBeamEnabled then
-                    createCheckpointBeam(part.Position)
-                end
-                return true, part
-            end
-        end
-    end
-    
-    return false, nil
-end
-
--- Start continuous checkpoint detection
-local function startCheckpointDetection()
-    if checkpointBeamConnection then
-        checkpointBeamConnection:Disconnect()
-    end
-    
-    checkpointBeamConnection = RunService.Heartbeat:Connect(function()
-        if autoDetectEnabled and autoLoopEnabled and isPlaying and not isWaitingAtCheckpoint then
-            local detected, checkpointPart = checkForCheckpoint()
-            if detected then
-                isWaitingAtCheckpoint = true
-                isPaused = true
-                
-                WindUI:Notify({
-                    Title = "Auto Detect",
-                    Content = "Checkpoint terdeteksi! Menunggu " .. checkpointDelay .. " detik...",
-                    Duration = checkpointDelay,
-                    Icon = "lucide:flag"
-                })
-                
-                task.wait(checkpointDelay)
-                
-                isPaused = false
-                isWaitingAtCheckpoint = false
-                
-                if checkpointPart then
-                    detectedCheckpoints[checkpointPart:GetFullName()] = nil
-                end
-            end
-        end
-    end)
-end
-
--- Stop checkpoint detection
-local function stopCheckpointDetection()
-    if checkpointBeamConnection then
-        checkpointBeamConnection:Disconnect()
-        checkpointBeamConnection = nil
-    end
-    clearBeams()
-    detectedCheckpoints = {}
-    isWaitingAtCheckpoint = false
-end
-
 local function stopPlayback()
     isPlaying = false
     isPaused = false
@@ -490,9 +278,6 @@ local function stopPlayback()
     hipHeightOffset = 0
     isFlipped = false
     currentFlipRotation = CFrame.new()
-    detectedCheckpoints = {}
-    isWaitingAtCheckpoint = false
-    stopCheckpointDetection()
     if playbackConnection then
         playbackConnection:Disconnect()
         playbackConnection = nil
@@ -520,12 +305,54 @@ local function startPlayback(data, onComplete)
     end
 
     local first = data[1]
-    if character and character:FindFirstChild("HumanoidRootPart") then
+    if character and character:FindFirstChild("HumanoidRootPart") and humanoid then
         local hrp = character.HumanoidRootPart
         local firstPos = tableToVec(first.position)
         firstPos = adjustPositionForAvatarSize(firstPos)
+        
+        -- Jalan ke posisi pertama, bukan teleport
+        local currentPos = hrp.Position
+        local distance = (firstPos - currentPos).Magnitude
+        
+        if distance > 5 then
+            WindUI:Notify({
+                Title = "Auto Walk",
+                Content = "Berjalan ke titik awal replay...",
+                Duration = 2,
+                Icon = "lucide:footprints"
+            })
+            
+            humanoid:MoveTo(firstPos)
+            
+            -- Tunggu sampai karakter sampai ke posisi atau timeout 30 detik
+            local startTime = tick()
+            local reachedPosition = false
+            
+            while (tick() - startTime) < 30 do
+                if not character or not hrp or not humanoid then break end
+                
+                local currentDist = (hrp.Position - firstPos).Magnitude
+                if currentDist < 5 then
+                    reachedPosition = true
+                    break
+                end
+                
+                task.wait(0.1)
+            end
+            
+            if not reachedPosition then
+                WindUI:Notify({
+                    Title = "Auto Walk",
+                    Content = "⚠️ Timeout mencapai titik awal, tetap melanjutkan...",
+                    Duration = 3,
+                    Icon = "lucide:alert-triangle"
+                })
+            end
+        end
+        
+        -- Set rotasi dan velocity setelah sampai
         local firstYaw = first.rotation or 0
-        local startCFrame = CFrame.new(firstPos) * CFrame.Angles(0, firstYaw, 0)
+        local startCFrame = CFrame.new(hrp.Position) * CFrame.Angles(0, firstYaw, 0)
         hrp.CFrame = startCFrame
         hrp.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
         hrp.AssemblyAngularVelocity = Vector3.new(0, 0, 0)
@@ -620,17 +447,13 @@ local function startPlayback(data, onComplete)
     end)
 end
 
-local function startAutoWalkSequence()
-    currentCheckpoint = 0
+local function startAutoWalkSequence(startIndex)
+    currentCheckpoint = startIndex - 1
+    currentStartIndex = startIndex
     autoLoopEnabled = true
-    
-    if autoDetectEnabled then
-        startCheckpointDetection()
-    end
     
     local function playNext()
         if not autoLoopEnabled then
-            stopCheckpointDetection()
             return
         end
         
@@ -638,80 +461,12 @@ local function startAutoWalkSequence()
         if currentCheckpoint > #jsonFiles then
             WindUI:Notify({
                 Title = "Auto Walk",
-                Content = "Semua checkpoint selesai! Looping dari awal...",
+                Content = "Semua checkpoint selesai! Looping dari checkpoint " .. currentStartIndex .. "...",
                 Duration = 3,
                 Icon = "lucide:repeat"
             })
-            detectedCheckpoints = {}
             task.wait(1)
-            currentCheckpoint = 0
-            playNext()
-            return
-        end
-        
-        local checkpointFile = jsonFiles[currentCheckpoint]
-        local ok, path = EnsureJsonFile(checkpointFile)
-        if not ok then
-            WindUI:Notify({
-                Title = "Error",
-                Content = "Failed to download: " .. checkpointFile,
-                Duration = 5,
-                Icon = "lucide:ban"
-            })
-            autoLoopEnabled = false
-            stopCheckpointDetection()
-            return
-        end
-        local data = loadCheckpoint(checkpointFile)
-        if data and #data > 0 then
-            WindUI:Notify({
-                Title = "Auto Walk (Automatic)",
-                Content = "Checkpoint " .. currentCheckpoint .. " / " .. #jsonFiles,
-                Duration = 2,
-                Icon = "lucide:bot"
-            })
-            task.wait(0.5)
-            startPlayback(data, playNext)
-        else
-            WindUI:Notify({
-                Title = "Error",
-                Content = "Error loading: " .. checkpointFile,
-                Duration = 5,
-                Icon = "lucide:ban"
-            })
-            autoLoopEnabled = false
-            stopCheckpointDetection()
-        end
-    end
-    playNext()
-end
-
-local function startManualAutoWalkSequence(startCheckpoint)
-    currentCheckpoint = startCheckpoint - 1
-    isManualMode = true
-    autoLoopEnabled = true
-    
-    if autoDetectEnabled then
-        startCheckpointDetection()
-    end
-    
-    local function playNext()
-        if not autoLoopEnabled then
-            stopCheckpointDetection()
-            return
-        end
-        
-        currentCheckpoint = currentCheckpoint + 1
-        if currentCheckpoint > #jsonFiles then
-            WindUI:Notify({
-                Title = "Auto Walk (Manual)",
-                Content = "Semua checkpoint selesai! Looping dari checkpoint " .. startCheckpoint .. "...",
-                Duration = 3,
-                Icon = "lucide:repeat"
-            })
-            detectedCheckpoints = {}
-            task.wait(1)
-            currentCheckpoint = startCheckpoint - 1
+            currentCheckpoint = currentStartIndex - 1
             playNext()
             return
         end
@@ -726,17 +481,15 @@ local function startManualAutoWalkSequence(startCheckpoint)
                 Icon = "lucide:ban"
             })
             autoLoopEnabled = false
-            isManualMode = false
-            stopCheckpointDetection()
             return
         end
         local data = loadCheckpoint(checkpointFile)
         if data and #data > 0 then
             WindUI:Notify({
-                Title = "Auto Walk (Manual)",
+                Title = "Auto Walk",
                 Content = "Playing Checkpoint " .. currentCheckpoint .. " / " .. #jsonFiles,
                 Duration = 2,
-                Icon = "lucide:hand"
+                Icon = "lucide:play"
             })
             task.wait(0.5)
             startPlayback(data, playNext)
@@ -748,8 +501,6 @@ local function startManualAutoWalkSequence(startCheckpoint)
                 Icon = "lucide:ban"
             })
             autoLoopEnabled = false
-            isManualMode = false
-            stopCheckpointDetection()
         end
     end
     playNext()
@@ -757,8 +508,6 @@ end
 
 local function playSingleCheckpointFile(fileName, checkpointIndex)
     autoLoopEnabled = false
-    isManualMode = false
-    isFavoriteReplay = false
     stopPlayback()
     local ok, path = EnsureJsonFile(fileName)
     if not ok then
@@ -782,7 +531,7 @@ local function playSingleCheckpointFile(fileName, checkpointIndex)
     end
     
     WindUI:Notify({
-        Title = "Auto Walk (Single)",
+        Title = "Auto Walk",
         Content = "Playing " .. fileName,
         Duration = 2,
         Icon = "lucide:play"
@@ -790,7 +539,7 @@ local function playSingleCheckpointFile(fileName, checkpointIndex)
     
     startPlayback(data, function()
         WindUI:Notify({
-            Title = "Auto Walk (Single)",
+            Title = "Auto Walk",
             Content = "Playback selesai!",
             Duration = 2,
             Icon = "lucide:check-check"
@@ -1101,11 +850,6 @@ local AutoWalkTab = Window:Tab({
     Icon = "lucide:bot"
 })
 
-local AutomaticTab = Window:Tab({
-    Title = "Automatic",
-    Icon = "lucide:zap"
-})
-
 local VisualTab = Window:Tab({
     Title = "Visual",
     Icon = "lucide:layers"
@@ -1233,514 +977,227 @@ local SpeedDropdown = AutoWalkTab:Dropdown({
 })
 
 -------------------------------------------------------------
--- FAVORIT REPLAY SECTION
+-- AUTO LOOP SECTION (TERPISAH)
 -------------------------------------------------------------
 AutoWalkTab:Section({
-    Title = "Favorit Replay (Full Auto + Loop)",
-    Icon = "lucide:star"
+    Title = "Auto Loop",
+    Icon = "lucide:repeat"
 })
 
--- Favorit Replay Route 1
-local FavReplay1Toggle = AutoWalkTab:Toggle({
-    Title = "Favorit Replay Route 1",
-    Desc = "Full auto dari spawn ke finish + auto loop",
+-- Auto Loop Toggle
+local AutoLoopToggle = AutoWalkTab:Toggle({
+    Title = "Enable Auto Loop",
+    Desc = "Loop otomatis sampai checkpoint terakhir lalu mulai dari awal",
     Default = false,
     Callback = function(Value)
         if Value then
-            isFavoriteReplay = true
-            autoLoopEnabled = true
-            isManualMode = false
-            stopPlayback()
             WindUI:Notify({
-                Title = "Favorit Replay",
-                Content = "Memulai Favorit Replay Route 1 (Auto Loop Aktif)",
+                Title = "Auto Loop",
+                Content = "Auto Loop AKTIF - Akan loop otomatis",
                 Duration = 3,
-                Icon = "lucide:star"
+                Icon = "lucide:repeat"
             })
-            task.wait(0.5)
-            startAutoWalkSequence()
         else
-            autoLoopEnabled = false
-            isFavoriteReplay = false
-            stopPlayback()
-        end
-    end,
-})
-
--- Favorit Replay Route 2
-local FavReplay2Toggle = AutoWalkTab:Toggle({
-    Title = "Favorit Replay Route 2",
-    Desc = "Full auto dari spawn ke finish + auto loop",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            isFavoriteReplay = true
-            autoLoopEnabled = true
-            isManualMode = false
-            stopPlayback()
             WindUI:Notify({
-                Title = "Favorit Replay",
-                Content = "Memulai Favorit Replay Route 2 (Auto Loop Aktif)",
-                Duration = 3,
-                Icon = "lucide:star"
+                Title = "Auto Loop",
+                Content = "Auto Loop NONAKTIF",
+                Duration = 2,
+                Icon = "lucide:repeat-off"
             })
-            task.wait(0.5)
-            -- Custom sequence untuk route 2 (bisa disesuaikan)
-            startAutoWalkSequence()
-        else
-            autoLoopEnabled = false
-            isFavoriteReplay = false
-            stopPlayback()
-        end
-    end,
-})
-
--- Favorit Replay Route 3
-local FavReplay3Toggle = AutoWalkTab:Toggle({
-    Title = "Favorit Replay Route 3",
-    Desc = "Full auto dari spawn ke finish + auto loop",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            isFavoriteReplay = true
-            autoLoopEnabled = true
-            isManualMode = false
-            stopPlayback()
-            WindUI:Notify({
-                Title = "Favorit Replay",
-                Content = "Memulai Favorit Replay Route 3 (Auto Loop Aktif)",
-                Duration = 3,
-                Icon = "lucide:star"
-            })
-            task.wait(0.5)
-            -- Custom sequence untuk route 3 (bisa disesuaikan)
-            startAutoWalkSequence()
-        else
-            autoLoopEnabled = false
-            isFavoriteReplay = false
-            stopPlayback()
-        end
-    end,
-})
-
--------------------------------------------------------------
--- MANUAL AUTO WALK SECTION
--------------------------------------------------------------
-AutoWalkTab:Section({
-    Title = "Auto Walk (Manual)",
-    Icon = "lucide:hand"
-})
-
--- Manual Auto Loop Toggle
-local ManualAutoLoopToggle = AutoWalkTab:Toggle({
-    Title = "Enable Auto Loop (Manual Mode)",
-    Desc = "Loop checkpoint secara manual saat bermain",
-    Default = false,
-    Callback = function(Value)
-        if not isFavoriteReplay then
-            if Value then
-                WindUI:Notify({
-                    Title = "Auto Loop (Manual)",
-                    Content = "Auto Loop Manual Mode AKTIF - Pilih checkpoint untuk mulai",
-                    Duration = 3,
-                    Icon = "lucide:repeat"
-                })
-            else
-                WindUI:Notify({
-                    Title = "Auto Loop (Manual)",
-                    Content = "Auto Loop Manual Mode NONAKTIF",
-                    Duration = 2,
-                    Icon = "lucide:repeat-off"
-                })
+            if autoLoopEnabled then
+                autoLoopEnabled = false
+                stopPlayback()
             end
         end
     end,
+})
+
+-------------------------------------------------------------
+-- REPLAYS SECTION
+-------------------------------------------------------------
+AutoWalkTab:Section({
+    Title = "Replays",
+    Icon = "lucide:play"
 })
 
 -- Spawnpoint Toggles
 local SCPToggle1 = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Start - Finish)",
+    Title = "Replay (Start - Finish)",
     Desc = "Walk from spawnpoint - Summit",
     Default = false,
     Callback = function(Value)
         if Value then
-            if ManualAutoLoopToggle.Value and not isFavoriteReplay then
-                startManualAutoWalkSequence(1)
+            if AutoLoopToggle.Value then
+                startAutoWalkSequence(1)
             else
                 playSingleCheckpointFile("YAHAYUK_SUMMIT2.json", 1)
             end
         else
-            if not isFavoriteReplay then
-                autoLoopEnabled = false
-                isManualMode = false
-                stopPlayback()
-            end
+            autoLoopEnabled = false
+            stopPlayback()
         end
     end,
 })
 
 local SCPToggle2 = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Spawnpoint Route 1)",
+    Title = "Replay (Spawnpoint Route 1)",
     Desc = "Walk from spawnpoint Route 1",
     Default = false,
     Callback = function(Value)
         if Value then
-            if ManualAutoLoopToggle.Value and not isFavoriteReplay then
-                startManualAutoWalkSequence(1)
+            if AutoLoopToggle.Value then
+                startAutoWalkSequence(2)
             else
                 playSingleCheckpointFile("spawnpoint_jalur_1.json", 2)
             end
         else
-            if not isFavoriteReplay then
-                autoLoopEnabled = false
-                isManualMode = false
-                stopPlayback()
-            end
+            autoLoopEnabled = false
+            stopPlayback()
         end
     end,
 })
 
 local SCPToggle3 = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Spawnpoint Route 2)",
+    Title = "Replay (Spawnpoint Route 2)",
     Desc = "Walk from spawnpoint Route 2",
     Default = false,
     Callback = function(Value)
         if Value then
-            if ManualAutoLoopToggle.Value and not isFavoriteReplay then
-                startManualAutoWalkSequence(2)
+            if AutoLoopToggle.Value then
+                startAutoWalkSequence(3)
             else
                 playSingleCheckpointFile("spawnpoint_jalur_2.json", 3)
             end
         else
-            if not isFavoriteReplay then
-                autoLoopEnabled = false
-                isManualMode = false
-                stopPlayback()
-            end
+            autoLoopEnabled = false
+            stopPlayback()
         end
     end,
 })
 
 local SCPToggle4 = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Spawnpoint Route 3)",
+    Title = "Replay (Spawnpoint Route 3)",
     Desc = "Walk from spawnpoint Route 3",
     Default = false,
     Callback = function(Value)
         if Value then
-            if ManualAutoLoopToggle.Value and not isFavoriteReplay then
-                startManualAutoWalkSequence(3)
+            if AutoLoopToggle.Value then
+                startAutoWalkSequence(4)
             else
                 playSingleCheckpointFile("spawnpoint_jalur_3.json", 4)
             end
         else
-            if not isFavoriteReplay then
-                autoLoopEnabled = false
-                isManualMode = false
-                stopPlayback()
-            end
+            autoLoopEnabled = false
+            stopPlayback()
         end
     end,
 })
 
 -- Checkpoint Toggles
 local CP1Toggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 1)",
+    Title = "Replay (Checkpoint 1)",
     Desc = "Walk from checkpoint 1",
     Default = false,
     Callback = function(Value)
         if Value then
-            if ManualAutoLoopToggle.Value and not isFavoriteReplay then
-                startManualAutoWalkSequence(4)
+            if AutoLoopToggle.Value then
+                startAutoWalkSequence(5)
             else
                 playSingleCheckpointFile("checkpoint_1.json", 5)
             end
         else
-            if not isFavoriteReplay then
-                autoLoopEnabled = false
-                isManualMode = false
-                stopPlayback()
-            end
+            autoLoopEnabled = false
+            stopPlayback()
         end
     end,
 })
 
 local CP2Toggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 2)",
+    Title = "Replay (Checkpoint 2)",
     Desc = "Walk from checkpoint 2",
     Default = false,
     Callback = function(Value)
         if Value then
-            if ManualAutoLoopToggle.Value and not isFavoriteReplay then
-                startManualAutoWalkSequence(5)
+            if AutoLoopToggle.Value then
+                startAutoWalkSequence(6)
             else
                 playSingleCheckpointFile("checkpoint_2.json", 6)
             end
         else
-            if not isFavoriteReplay then
-                autoLoopEnabled = false
-                isManualMode = false
-                stopPlayback()
-            end
+            autoLoopEnabled = false
+            stopPlayback()
         end
     end,
 })
 
 local CP3Toggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 3)",
+    Title = "Replay (Checkpoint 3)",
     Desc = "Walk from checkpoint 3",
     Default = false,
     Callback = function(Value)
         if Value then
-            if ManualAutoLoopToggle.Value and not isFavoriteReplay then
-                startManualAutoWalkSequence(6)
+            if AutoLoopToggle.Value then
+                startAutoWalkSequence(7)
             else
                 playSingleCheckpointFile("checkpoint_3.json", 7)
             end
         else
-            if not isFavoriteReplay then
-                autoLoopEnabled = false
-                isManualMode = false
-                stopPlayback()
-            end
+            autoLoopEnabled = false
+            stopPlayback()
         end
     end,
 })
 
 local CP4Toggle1 = AutoWalkTab:Toggle({
-    Title = "[ UPD ] Auto Walk (Checkpoint 4 Route 1)",
+    Title = "[ UPD ] Replay (Checkpoint 4 Route 1)",
     Desc = "Walk from checkpoint 4 Route 1",
     Default = false,
     Callback = function(Value)
         if Value then
-            if ManualAutoLoopToggle.Value and not isFavoriteReplay then
-                startManualAutoWalkSequence(7)
+            if AutoLoopToggle.Value then
+                startAutoWalkSequence(8)
             else
                 playSingleCheckpointFile("checkpoint_4_jalur_1_new.json", 8)
             end
         else
-            if not isFavoriteReplay then
-                autoLoopEnabled = false
-                isManualMode = false
-                stopPlayback()
-            end
+            autoLoopEnabled = false
+            stopPlayback()
         end
     end,
 })
 
 local CP4Toggle2 = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 4 Route 2)",
+    Title = "Replay (Checkpoint 4 Route 2)",
     Desc = "Walk from checkpoint 4 Route 2",
     Default = false,
     Callback = function(Value)
         if Value then
-            if ManualAutoLoopToggle.Value and not isFavoriteReplay then
-                startManualAutoWalkSequence(8)
+            if AutoLoopToggle.Value then
+                startAutoWalkSequence(9)
             else
                 playSingleCheckpointFile("checkpoint_4_jalur_2.json", 9)
             end
         else
-            if not isFavoriteReplay then
-                autoLoopEnabled = false
-                isManualMode = false
-                stopPlayback()
-            end
+            autoLoopEnabled = false
+            stopPlayback()
         end
     end,
 })
 
 local CP5Toggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 5)",
+    Title = "Replay (Checkpoint 5)",
     Desc = "Walk from checkpoint 5",
     Default = false,
     Callback = function(Value)
         if Value then
-            if ManualAutoLoopToggle.Value and not isFavoriteReplay then
-                startManualAutoWalkSequence(9)
+            if AutoLoopToggle.Value then
+                startAutoWalkSequence(10)
             else
                 playSingleCheckpointFile("checkpoint_5.json", 10)
             end
         else
-            if not isFavoriteReplay then
-                autoLoopEnabled = false
-                isManualMode = false
-                stopPlayback()
-            end
-        end
-    end,
-})
-
--------------------------------------------------------------
--- AUTOMATIC TAB
--------------------------------------------------------------
-AutomaticTab:Section({
-    Title = "Checkpoint Detector",
-    Icon = "lucide:radar"
-})
-
--- Checkpoint Detector Toggle
-local CheckpointDetectorToggle = AutomaticTab:Toggle({
-    Title = "Enable Checkpoint Detector",
-    Desc = "Show visual beam to nearby checkpoints in real-time",
-    Default = false,
-    Callback = function(Value)
-        checkpointDetectorEnabled = Value
-        if Value then
-            WindUI:Notify({
-                Title = "Checkpoint Detector",
-                Content = "Checkpoint Detector AKTIF - Beam kuning akan muncul ke checkpoint terdekat",
-                Duration = 3,
-                Icon = "lucide:radar"
-            })
-            startCheckpointDetector()
-        else
-            WindUI:Notify({
-                Title = "Checkpoint Detector",
-                Content = "Checkpoint Detector NONAKTIF",
-                Duration = 2,
-                Icon = "lucide:radar-off"
-            })
-            stopCheckpointDetector()
-        end
-    end,
-})
-
-AutomaticTab:Section({
-    Title = "Auto Detect During Route",
-    Icon = "lucide:flag"
-})
-
--- Auto Detect Checkpoint Toggle
-local AutoDetectToggle = AutomaticTab:Toggle({
-    Title = "Auto Detect Checkpoint During Route",
-    Desc = "Pause replay when checkpoint detected (Only works with Auto Loop)",
-    Default = false,
-    Callback = function(Value)
-        autoDetectEnabled = Value
-        if Value then
-            WindUI:Notify({
-                Title = "Auto Detect",
-                Content = "Auto Detect Checkpoint AKTIF - Akan pause saat detect checkpoint",
-                Duration = 3,
-                Icon = "lucide:flag"
-            })
-            if autoLoopEnabled and isPlaying then
-                startCheckpointDetection()
-            end
-        else
-            WindUI:Notify({
-                Title = "Auto Detect",
-                Content = "Auto Detect Checkpoint NONAKTIF",
-                Duration = 2,
-                Icon = "lucide:flag-off"
-            })
-            stopCheckpointDetection()
-        end
-    end,
-})
-
--- CP Beam Visual Toggle
-local CPBeamToggle = AutomaticTab:Toggle({
-    Title = "CP Beam Visual",
-    Desc = "Show visual beam line to detected checkpoint",
-    Default = false,
-    Callback = function(Value)
-        cpBeamEnabled = Value
-        if Value then
-            WindUI:Notify({
-                Title = "CP Beam",
-                Content = "CP Beam Visual AKTIF - Garis hijau akan muncul saat checkpoint terdeteksi",
-                Duration = 3,
-                Icon = "lucide:zap"
-            })
-        else
-            clearBeams()
-            WindUI:Notify({
-                Title = "CP Beam",
-                Content = "CP Beam Visual NONAKTIF",
-                Duration = 2,
-                Icon = "lucide:zap-off"
-            })
-        end
-    end,
-})
-
--- Checkpoint Delay Dropdown
-local delayOptions = {}
-for i = 10, 50 do
-    table.insert(delayOptions, {
-        Title = i .. " seconds",
-        Icon = "timer"
-    })
-end
-
-local DelayDropdown = AutomaticTab:Dropdown({
-    Title = "Delay After Checkpoint",
-    Desc = "Set delay after checkpoint detected",
-    Values = delayOptions,
-    Value = {
-        Title = "10 seconds",
-        Icon = "timer"
-    },
-    Callback = function(option)
-        local delay = tonumber(option.Title:match("(%d+)"))
-        if delay then
-            checkpointDelay = delay
-            WindUI:Notify({
-                Title = "Checkpoint Delay",
-                Content = "Delay diatur ke " .. option.Title,
-                Duration = 2,
-                Icon = "lucide:timer"
-            })
-        end
-    end,
-})
-
--- Detection Distance Dropdown
-local distanceOptions = {}
-for i = 25, 100, 5 do
-    table.insert(distanceOptions, {
-        Title = i .. " studs",
-        Icon = "ruler"
-    })
-end
-
-local DistanceDropdown = AutomaticTab:Dropdown({
-    Title = "Detection Distance (Studs)",
-    Desc = "Set checkpoint detection range",
-    Values = distanceOptions,
-    Value = {
-        Title = "25 studs",
-        Icon = "ruler"
-    },
-    Callback = function(option)
-        local distance = tonumber(option.Title:match("(%d+)"))
-        if distance then
-            detectionDistance = distance
-            WindUI:Notify({
-                Title = "Detection Distance",
-                Content = "Jarak deteksi diatur ke " .. option.Title,
-                Duration = 2,
-                Icon = "lucide:ruler"
-            })
-        end
-    end,
-})
-
--- Keyword Input
-AutomaticTab:Input({
-    Title = "Keyword Basepart Checkpoint",
-    Desc = "Set basepart name keyword for detection",
-    Placeholder = "Checkpoint",
-    Value = "Checkpoint",
-    Callback = function(Value)
-        if Value and Value ~= "" then
-            checkpointKeyword = Value
-            WindUI:Notify({
-                Title = "Checkpoint Keyword",
-                Content = "Keyword diatur ke: " .. Value,
-                Duration = 3,
-                Icon = "lucide:text-cursor"
-            })
+            autoLoopEnabled = false
+            stopPlayback()
         end
     end,
 })
@@ -2291,14 +1748,14 @@ CreditsTab:Paragraph({
 -------------------------------------------------------------
 WindUI:Notify({
     Title = "Script Loaded",
-    Content = "AstrionHUB | Mount Yahayuk v1.0.3 berhasil dimuat!",
+    Content = "AstrionHUB | Mount Yahayuk v1.0.5 berhasil dimuat!",
     Duration = 5,
     Icon = "lucide:check-circle"
 })
 
 -- Add version tag
 Window:Tag({
-    Title = "v1.0.3",
+    Title = "v1.0.5",
     Color = Color3.fromHex("#30ff6a"),
     Radius = UDim.new(0, 8),
 })
