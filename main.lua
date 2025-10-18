@@ -96,7 +96,7 @@ local jsonFiles = {
     "checkpoint_4_jalur_1.json",
     "checkpoint_4_jalur_1_new.json",
     "checkpoint_4_jalur_2.json",
-    "checkpoint_5.json",
+    "checkpoint_5_new.json",
 }
 
 local isPlaying = false
@@ -1211,7 +1211,7 @@ local CP5Toggle = AutoWalkTab:Toggle({
             if AutoLoopToggle.Value then
                 startAutoWalkSequence(10)
             else
-                playSingleCheckpointFile("checkpoint_5.json", 10)
+                playSingleCheckpointFile("checkpoint_5_new.json", 10)
             end
         else
             autoLoopEnabled = false
