@@ -1022,8 +1022,8 @@ AutoWalkTab:Section({
 
 -- Spawnpoint Toggles
 local SCPToggle1 = AutoWalkTab:Toggle({
-    Title = "Replay (Start - Finish)",
-    Desc = "Walk from spawnpoint - Summit",
+    Title = "Replay (Spawnpoint Via Kiri)",
+    Desc = "Walk from spawnpoint Via kiri",
     Default = false,
     Callback = function(Value)
         if Value then
@@ -1040,8 +1040,8 @@ local SCPToggle1 = AutoWalkTab:Toggle({
 })
 
 local SCPToggle2 = AutoWalkTab:Toggle({
-    Title = "Replay (Spawnpoint Route 1)",
-    Desc = "Walk from spawnpoint Route 1",
+    Title = "Replay (Spawnpoint Via Tengah)",
+    Desc = "Walk from spawnpoint Via Tengah",
     Default = false,
     Callback = function(Value)
         if Value then
@@ -1058,8 +1058,8 @@ local SCPToggle2 = AutoWalkTab:Toggle({
 })
 
 local SCPToggle3 = AutoWalkTab:Toggle({
-    Title = "Replay (Spawnpoint Route 2)",
-    Desc = "Walk from spawnpoint Route 2",
+    Title = "Replay (Spawnpoint Via Kanan)",
+    Desc = "Walk from spawnpoint Via Kanan",
     Default = false,
     Callback = function(Value)
         if Value then
@@ -1076,8 +1076,8 @@ local SCPToggle3 = AutoWalkTab:Toggle({
 })
 
 local SCPToggle4 = AutoWalkTab:Toggle({
-    Title = "Replay (Spawnpoint Route 3)",
-    Desc = "Walk from spawnpoint Route 3",
+    Title = "Replay (Spawnpoint Route 1)",
+    Desc = "Walk from spawnpoint Route 1",
     Default = false,
     Callback = function(Value)
         if Value then
@@ -1095,8 +1095,8 @@ local SCPToggle4 = AutoWalkTab:Toggle({
 
 -- Checkpoint Toggles
 local CP1Toggle = AutoWalkTab:Toggle({
-    Title = "Replay (Checkpoint 1)",
-    Desc = "Walk from checkpoint 1",
+    Title = "Replay (Checkpoint 2)",
+    Desc = "Walk from checkpoint 2",
     Default = false,
     Callback = function(Value)
         if Value then
@@ -1113,8 +1113,8 @@ local CP1Toggle = AutoWalkTab:Toggle({
 })
 
 local CP2Toggle = AutoWalkTab:Toggle({
-    Title = "Replay (Checkpoint 2)",
-    Desc = "Walk from checkpoint 2",
+    Title = "Replay (Checkpoint 3)",
+    Desc = "Walk from checkpoint 3",
     Default = false,
     Callback = function(Value)
         if Value then
@@ -1131,8 +1131,8 @@ local CP2Toggle = AutoWalkTab:Toggle({
 })
 
 local CP3Toggle = AutoWalkTab:Toggle({
-    Title = "Replay (Checkpoint 3)",
-    Desc = "Walk from checkpoint 3",
+    Title = "Replay (Checkpoint 4)",
+    Desc = "Walk from checkpoint 4",
     Default = false,
     Callback = function(Value)
         if Value then
