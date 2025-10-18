@@ -725,14 +725,25 @@ local function handleCP(cp)
     if not cp or not humanoidRootPart then return end
     
     awaitingCP = true
-    isPlaying = false
+    
+    -- Pause replay saat mendeteksi checkpoint
+    if isPlaying then
+        isPaused = true
+        WindUI:Notify({
+            Title = "CP Detector",
+            Content = "⏸️ Replay dijeda - Mendeteksi checkpoint: " .. cp.Name,
+            Duration = 2,
+            Icon = "lucide:pause-circle"
+        })
+    end
+    
     stopCPMovement()
     
     local targetPos = cp.Position + Vector3.new(0, 3, 0)
     
     WindUI:Notify({
         Title = "CP Detector",
-        Content = "Menuju checkpoint: " .. cp.Name,
+        Content = "🎯 Menuju checkpoint: " .. cp.Name,
         Duration = 2,
         Icon = "lucide:navigation"
     })
@@ -754,34 +765,37 @@ local function handleCP(cp)
         
         WindUI:Notify({
             Title = "CP Detector",
-            Content = string.format("CP '%s' tercapai! Menunggu %ds...", cp.Name, cpDelayAfterDetect),
+            Content = string.format("✅ CP '%s' tercapai! Menunggu %ds...", cp.Name, cpDelayAfterDetect),
             Duration = 3,
             Icon = "lucide:check-circle"
         })
         
         task.wait(cpDelayAfterDetect)
         
-        if lastReplayPos then
-            walkToCP(lastReplayPos)
+        -- Resume replay setelah checkpoint tercapai
+        if isPlaying then
+            isPaused = false
+            WindUI:Notify({
+                Title = "CP Detector",
+                Content = "▶️ Replay dilanjutkan!",
+                Duration = 2,
+                Icon = "lucide:play-circle"
+            })
         end
         
-        WindUI:Notify({
-            Title = "CP Detector",
-            Content = "Kembali ke lintasan, lanjut replay...",
-            Duration = 2,
-            Icon = "lucide:play"
-        })
-        
-        task.wait(0.2)
         startCPMovement()
-        isPlaying = true
     else
         WindUI:Notify({
             Title = "CP Detector",
-            Content = "⚠️ Gagal mencapai checkpoint!",
+            Content = "⚠️ Gagal mencapai checkpoint! Melanjutkan replay...",
             Duration = 3,
             Icon = "lucide:alert-triangle"
         })
+        
+        -- Resume replay jika gagal mencapai checkpoint
+        if isPlaying then
+            isPaused = false
+        end
     end
     
     awaitingCP = false
@@ -1369,7 +1383,7 @@ AutoCheckpointTab:Section({
 
 AutoCheckpointTab:Paragraph({
     Title = "ℹ️ Info",
-    Desc = "Auto Checkpoint akan mendeteksi checkpoint terdekat saat replay berjalan dan otomatis menuju checkpoint tersebut.",
+    Desc = "Auto Checkpoint akan mendeteksi checkpoint terdekat saat replay berjalan. Replay akan otomatis PAUSE saat checkpoint terdeteksi dalam radius, lalu RESUME setelah checkpoint tercapai.",
 })
 
 -- Enable Auto CP Toggle
@@ -2079,14 +2093,14 @@ CreditsTab:Paragraph({
 -------------------------------------------------------------
 WindUI:Notify({
     Title = "Script Loaded",
-    Content = "AstrionHUB | Mount Yahayuk v1.0.7 berhasil dimuat!",
+    Content = "AstrionHUB | Mount Yahayuk v1.0.8 berhasil dimuat!",
     Duration = 5,
     Icon = "lucide:check-circle"
 })
 
 -- Add version tag
 Window:Tag({
-    Title = "v1.0.7",
+    Title = "v1.0.8",
     Color = Color3.fromHex("#30ff6a"),
     Radius = UDim.new(0, 8),
 })
