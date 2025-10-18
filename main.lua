@@ -1027,6 +1027,24 @@ local SCPToggle1 = AutoWalkTab:Toggle({
             if AutoLoopToggle.Value then
                 startAutoWalkSequence(1)
             else
+                playSingleCheckpointFile("onetosummit.json", 1)
+            end
+        else
+            autoLoopEnabled = false
+            stopPlayback()
+        end
+    end,
+})
+
+local SCPToggle1 = AutoWalkTab:Toggle({
+    Title = "Replay (Spawnpoint Via Kiri)",
+    Desc = "Walk from spawnpoint Via kiri",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            if AutoLoopToggle.Value then
+                startAutoWalkSequence(1)
+            else
                 playSingleCheckpointFile("spawnpoint_jalur_1.json", 1)
             end
         else
