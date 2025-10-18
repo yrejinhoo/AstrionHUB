@@ -85,18 +85,15 @@ if not isfolder(jsonFolder) then
 end
 
 -- Server URL and JSON checkpoint file list
-local baseURL = "https://raw.githubusercontent.com/yrejinhoo/Replays/refs/heads/main/YAHAYUK/"
+local baseURL = "https://raw.githubusercontent.com/yrejinhoo/Replays/refs/heads/main/YAHAYUKV2/"
 local jsonFiles = {
     "spawnpoint_jalur_1.json",
     "spawnpoint_jalur_2.json",
-    "spawnpoint_jalur_3.json",
     "checkpoint_1.json",
     "checkpoint_2.json",
     "checkpoint_3.json",
-    "checkpoint_4_jalur_1.json",
-    "checkpoint_4_jalur_1_new.json",
-    "checkpoint_4_jalur_2.json",
-    "checkpoint_5_new.json",
+    "checkpoint_4.json",
+    "checkpoint_5.json",
 }
 
 local isPlaying = false
@@ -1066,7 +1063,7 @@ local SCPToggle3 = AutoWalkTab:Toggle({
             if AutoLoopToggle.Value then
                 startAutoWalkSequence(3)
             else
-                playSingleCheckpointFile("spawnpoint_jalur_3.json", 3)
+                playSingleCheckpointFile("checkpoint_1.json", 3)
             end
         else
             autoLoopEnabled = false
@@ -1084,7 +1081,7 @@ local SCPToggle4 = AutoWalkTab:Toggle({
             if AutoLoopToggle.Value then
                 startAutoWalkSequence(4)
             else
-                playSingleCheckpointFile("checkpoint_1.json", 4)
+                playSingleCheckpointFile("checkpoint_2.json", 4)
             end
         else
             autoLoopEnabled = false
@@ -1103,7 +1100,7 @@ local CP1Toggle = AutoWalkTab:Toggle({
             if AutoLoopToggle.Value then
                 startAutoWalkSequence(5)
             else
-                playSingleCheckpointFile("checkpoint_2.json", 5)
+                playSingleCheckpointFile("checkpoint_3.json", 5)
             end
         else
             autoLoopEnabled = false
@@ -1121,7 +1118,7 @@ local CP2Toggle = AutoWalkTab:Toggle({
             if AutoLoopToggle.Value then
                 startAutoWalkSequence(6)
             else
-                playSingleCheckpointFile("checkpoint_3.json", 6)
+                playSingleCheckpointFile("checkpoint_4.json", 6)
             end
         else
             autoLoopEnabled = false
@@ -1139,7 +1136,7 @@ local CP3Toggle = AutoWalkTab:Toggle({
             if AutoLoopToggle.Value then
                 startAutoWalkSequence(7)
             else
-                playSingleCheckpointFile("checkpoint_4.json", 7)
+                playSingleCheckpointFile("checkpoint_5.json", 7)
             end
         else
             autoLoopEnabled = false
@@ -1148,77 +1145,6 @@ local CP3Toggle = AutoWalkTab:Toggle({
     end,
 })
 
-local CP4Toggle1 = AutoWalkTab:Toggle({
-    Title = "[ OLD ] Replay (Checkpoint 4 Route 1)",
-    Desc = "Walk from checkpoint 4 Route 1",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            if AutoLoopToggle.Value then
-                startAutoWalkSequence(8)
-            else
-                playSingleCheckpointFile("checkpoint_4_jalur_1.json", 8)
-            end
-        else
-            autoLoopEnabled = false
-            stopPlayback()
-        end
-    end,
-})
-
-local CP4Toggle2 = AutoWalkTab:Toggle({
-    Title = "[UPD] Replay (Checkpoint 4 Route 1)",
-    Desc = "Walk from checkpoint 4 Route 1",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            if AutoLoopToggle.Value then
-                startAutoWalkSequence(9)
-            else
-                playSingleCheckpointFile("checkpoint_4_jalur_1_new.json", 9)
-            end
-        else
-            autoLoopEnabled = false
-            stopPlayback()
-        end
-    end,
-})
-
-local CP5Toggle = AutoWalkTab:Toggle({
-    Title = "Replay (Checkpoint 4 Route 2)",
-    Desc = "Walk from checkpoint 4 Route 2",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            if AutoLoopToggle.Value then
-                startAutoWalkSequence(10)
-            else
-                playSingleCheckpointFile("checkpoint_4_jalur_2.json", 10)
-            end
-        else
-            autoLoopEnabled = false
-            stopPlayback()
-        end
-    end,
-})
-
-local CP5Toggle = AutoWalkTab:Toggle({
-    Title = "Replay (Checkpoint 5)",
-    Desc = "Walk from checkpoint 5",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            if AutoLoopToggle.Value then
-                startAutoWalkSequence(10)
-            else
-                playSingleCheckpointFile("checkpoint_5_new.json", 10)
-            end
-        else
-            autoLoopEnabled = false
-            stopPlayback()
-        end
-    end,
-})
 
 -------------------------------------------------------------
 -- VISUAL TAB
