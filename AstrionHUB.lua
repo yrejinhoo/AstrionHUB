@@ -1,3 +1,4 @@
+
 -------------------------------------------------------------
 -- LOAD LIBRARY UI
 -------------------------------------------------------------
@@ -46,6 +47,7 @@ local humanoid = character:WaitForChild("Humanoid")
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 local setclipboard = setclipboard or toclipboard
 
+-- Get avatar URL
 local avatarUrl = string.format(
     "https://www.roblox.com/headshot-thumbnail/image?userId=%s&width=420&height=420&format=png",
     player.UserId
@@ -122,12 +124,13 @@ local isFlipped = false
 local FLIP_SMOOTHNESS = 0.05
 local currentFlipRotation = CFrame.new()
 
--- Automatic Checkpoint Detection Variables
-local autoDetectCheckpoint = false
-local cpBeamVisual = false
-local cpDelayAfterDetect = 2
-local cpDetectionRange = 50
-local cpKeyword = "Checkpoint"
+-- Auto Detect Checkpoint Variables
+local autoDetectEnabled = false
+local cpBeamEnabled = false
+local checkpointDelay = 2
+local detectionDistance = 10
+local checkpointKeyword = "Checkpoint"
+local detectedCheckpoints = {}
 local beamParts = {}
 
 -------------------------------------------------------------
@@ -222,56 +225,6 @@ local function simulateNaturalMovement(moveDirection, velocity)
     end
 end
 
-local function clearBeamVisuals()
-    for _, part in ipairs(beamParts) do
-        if part and part.Parent then
-            part:Destroy()
-        end
-    end
-    beamParts = {}
-end
-
-local function createBeamVisual(position)
-    if not cpBeamVisual then return end
-    
-    local beam = Instance.new("Part")
-    beam.Name = "CPBeam"
-    beam.Anchored = true
-    beam.CanCollide = false
-    beam.Size = Vector3.new(2, 50, 2)
-    beam.Position = position
-    beam.Transparency = 0.5
-    beam.Color = Color3.fromRGB(0, 255, 0)
-    beam.Material = Enum.Material.Neon
-    beam.Parent = workspace
-    
-    table.insert(beamParts, beam)
-    
-    task.delay(5, function()
-        if beam and beam.Parent then
-            beam:Destroy()
-        end
-    end)
-end
-
-local function checkForCheckpoint()
-    if not autoDetectCheckpoint or not character or not character:FindFirstChild("HumanoidRootPart") then
-        return false
-    end
-    
-    local hrp = character.HumanoidRootPart
-    local nearbyParts = workspace:GetPartBoundsInRadius(hrp.Position, cpDetectionRange)
-    
-    for _, part in ipairs(nearbyParts) do
-        if part:IsA("BasePart") and string.find(string.lower(part.Name), string.lower(cpKeyword)) then
-            createBeamVisual(part.Position)
-            return true
-        end
-    end
-    
-    return false
-end
-
 local function EnsureJsonFile(fileName)
     local savePath = jsonFolder .. "/" .. fileName
     if isfile(savePath) then return true, savePath end
@@ -326,6 +279,65 @@ local function findSurroundingFrames(data, t)
     return i0, i1, alpha
 end
 
+-- Create checkpoint beam visualization
+local function createCheckpointBeam(position)
+    if not cpBeamEnabled then return end
+    
+    local beam = Instance.new("Part")
+    beam.Name = "CheckpointBeam"
+    beam.Anchored = true
+    beam.CanCollide = false
+    beam.Size = Vector3.new(detectionDistance * 2, 50, detectionDistance * 2)
+    beam.Position = position
+    beam.Transparency = 0.7
+    beam.Color = Color3.fromRGB(0, 255, 0)
+    beam.Material = Enum.Material.Neon
+    beam.Parent = workspace
+    
+    table.insert(beamParts, beam)
+    
+    task.spawn(function()
+        for i = 1, 10 do
+            beam.Transparency = beam.Transparency + 0.03
+            task.wait(0.1)
+        end
+        beam:Destroy()
+    end)
+end
+
+-- Clear all beam parts
+local function clearBeams()
+    for _, beam in ipairs(beamParts) do
+        if beam and beam.Parent then
+            beam:Destroy()
+        end
+    end
+    beamParts = {}
+end
+
+-- Check for nearby checkpoint
+local function checkForCheckpoint()
+    if not autoDetectEnabled or not character or not character:FindFirstChild("HumanoidRootPart") then
+        return false
+    end
+    
+    local hrp = character.HumanoidRootPart
+    local nearbyParts = workspace:GetPartBoundsInRadius(hrp.Position, detectionDistance)
+    
+    for _, part in ipairs(nearbyParts) do
+        if part:IsA("BasePart") and string.find(part.Name:lower(), checkpointKeyword:lower()) then
+            local partId = part:GetFullName()
+            if not detectedCheckpoints[partId] then
+                detectedCheckpoints[partId] = true
+                createCheckpointBeam(part.Position)
+                return true
+            end
+        end
+    end
+    
+    return false
+end
+
 local function stopPlayback()
     isPlaying = false
     isPaused = false
@@ -337,7 +349,7 @@ local function stopPlayback()
     hipHeightOffset = 0
     isFlipped = false
     currentFlipRotation = CFrame.new()
-    clearBeamVisuals()
+    detectedCheckpoints = {}
     if playbackConnection then
         playbackConnection:Disconnect()
         playbackConnection = nil
@@ -381,6 +393,21 @@ local function startPlayback(data, onComplete)
 
     playbackConnection = RunService.Heartbeat:Connect(function(deltaTime)
         if not isPlaying then return end
+        
+        -- Check for checkpoint detection
+        if autoDetectEnabled and checkForCheckpoint() then
+            isPaused = true
+            WindUI:Notify({
+                Title = "Auto Detect",
+                Content = "Checkpoint terdeteksi! Menunggu " .. checkpointDelay .. " detik...",
+                Duration = 3,
+                Icon = "lucide:flag"
+            })
+            task.wait(checkpointDelay)
+            isPaused = false
+            detectedCheckpoints = {}
+        end
+        
         if isPaused then
             if pauseStartTime == 0 then
                 pauseStartTime = tick()
@@ -394,20 +421,6 @@ local function startPlayback(data, onComplete)
                 lastPlaybackTime = tick()
             end
         end
-        
-        -- Check for checkpoint detection
-        if autoDetectCheckpoint and checkForCheckpoint() then
-            isPaused = true
-            WindUI:Notify({
-                Title = "Checkpoint Detected",
-                Content = "Checkpoint terdeteksi! Jeda " .. cpDelayAfterDetect .. " detik...",
-                Duration = 2,
-                Icon = "lucide:flag"
-            })
-            task.wait(cpDelayAfterDetect)
-            isPaused = false
-        end
-        
         if not character or not character:FindFirstChild("HumanoidRootPart") then return end
         if not humanoid or humanoid.Parent ~= character then
             humanoid = character:FindFirstChild("Humanoid")
@@ -975,14 +988,8 @@ local function createPauseRotateUI()
             }):Play()
         end)
         btn.MouseLeave:Connect(function()
-            local targetColor = color or BTN_COLOR
-            if btn.Name == "PauseBtn" and isPaused then
-                targetColor = SUCCESS_COLOR
-            elseif btn.Name == "RotateBtn" and isFlipped then
-                targetColor = SUCCESS_COLOR
-            end
             TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {
-                BackgroundColor3 = targetColor,
+                BackgroundColor3 = color or BTN_COLOR,
                 Size = UDim2.new(0, 50, 0, 50)
             }):Play()
         end)
@@ -990,9 +997,8 @@ local function createPauseRotateUI()
     end
 
     local pauseResumeBtn = createButton("⏸️", BTN_COLOR)
-    pauseResumeBtn.Name = "PauseBtn"
     local rotateBtn = createButton("🔄", BTN_COLOR)
-    rotateBtn.Name = "RotateBtn"
+    local currentlyPaused = false
     local tweenTime = 0.25
     local showScale = 1
     local hideScale = 0
@@ -1024,8 +1030,9 @@ local function createPauseRotateUI()
             })
             return
         end
-        isPaused = not isPaused
-        if isPaused then
+        if not currentlyPaused then
+            isPaused = true
+            currentlyPaused = true
             pauseResumeBtn.Text = "▶️"
             pauseResumeBtn.BackgroundColor3 = SUCCESS_COLOR
             WindUI:Notify({
@@ -1035,6 +1042,8 @@ local function createPauseRotateUI()
                 Icon = "lucide:pause"
             })
         else
+            isPaused = false
+            currentlyPaused = false
             pauseResumeBtn.Text = "⏸️"
             pauseResumeBtn.BackgroundColor3 = BTN_COLOR
             WindUI:Notify({
@@ -1079,7 +1088,7 @@ local function createPauseRotateUI()
     end)
 
     local function resetUIState()
-        isPaused = false
+        currentlyPaused = false
         pauseResumeBtn.Text = "⏸️"
         pauseResumeBtn.BackgroundColor3 = BTN_COLOR
         isFlipped = false
@@ -1113,7 +1122,7 @@ local AutoWalkTab = Window:Tab({
 
 local AutomaticTab = Window:Tab({
     Title = "Automatic",
-    Icon = "lucide:settings-2"
+    Icon = "lucide:zap"
 })
 
 local VisualTab = Window:Tab({
@@ -1144,6 +1153,7 @@ AutoWalkTab:Section({
     Icon = "lucide:settings"
 })
 
+-- Pause/Rotate Menu Toggle
 local PauseRotateToggle = AutoWalkTab:Toggle({
     Title = "Pause/Rotate Menu",
     Desc = "Show/Hide pause and rotate controls",
@@ -1157,6 +1167,7 @@ local PauseRotateToggle = AutoWalkTab:Toggle({
     end,
 })
 
+-- Always Sprint Variables
 local normalSpeed = 16
 local sprintSpeed = 24
 local autoShift = false
@@ -1180,6 +1191,7 @@ player.CharacterAdded:Connect(function(char)
     end
 end)
 
+-- Always Sprint Toggle
 local AlwaysSprintToggle = AutoWalkTab:Toggle({
     Title = "Always Sprint",
     Desc = "Enable automatic sprint mode",
@@ -1207,45 +1219,64 @@ local AlwaysSprintToggle = AutoWalkTab:Toggle({
     end,
 })
 
-local SpeedSlider = AutoWalkTab:Slider({
+-- Speed Dropdown
+local SpeedDropdown = AutoWalkTab:Dropdown({
     Title = "⚡ Set Speed",
     Desc = "Adjust playback speed",
-    Min = 0.5,
-    Max = 1.2,
-    Default = 1.0,
-    Decimals = 1,
+    Multi = false,
+    Default = "Normal (1.0x)",
+    List = {
+        "Very Slow (0.5x)",
+        "Slow (0.7x)",
+        "Normal (1.0x)",
+        "Fast (1.2x)"
+    },
     Callback = function(Value)
-        playbackSpeed = Value
+        if Value == "Very Slow (0.5x)" then
+            playbackSpeed = 0.5
+        elseif Value == "Slow (0.7x)" then
+            playbackSpeed = 0.7
+        elseif Value == "Normal (1.0x)" then
+            playbackSpeed = 1.0
+        elseif Value == "Fast (1.2x)" then
+            playbackSpeed = 1.2
+        end
         WindUI:Notify({
-            Title = "Playback Speed",
-            Content = string.format("Kecepatan diatur ke %.1fx", Value),
+            Title = "Set Speed",
+            Content = "Speed diatur ke " .. Value,
             Duration = 2,
             Icon = "lucide:gauge"
         })
     end,
 })
 
+-- Auto Loop Toggle
+AutoWalkTab:Section({
+    Title = "Auto Loop Settings",
+    Icon = "lucide:repeat"
+})
+
 local AutoLoopToggle = AutoWalkTab:Toggle({
-    Title = "Auto Loop",
-    Desc = "Enable automatic looping through all checkpoints",
+    Title = "Enable Auto Loop",
+    Desc = "Automatically loop through all checkpoints",
     Default = false,
     Callback = function(Value)
         loopingEnabled = Value
         if Value then
-            autoDetectCheckpoint = true
-            cpBeamVisual = true
+            autoDetectEnabled = true
+            cpBeamEnabled = true
             WindUI:Notify({
                 Title = "Auto Loop",
-                Content = "✅ Auto Loop Aktif (Auto Detect & CP Beam ON)",
+                Content = "Auto Loop, Auto Detect & CP Beam diaktifkan!",
                 Duration = 3,
                 Icon = "lucide:repeat"
             })
         else
             WindUI:Notify({
                 Title = "Auto Loop",
-                Content = "❌ Auto Loop Nonaktif",
-                Duration = 3,
-                Icon = "lucide:x"
+                Content = "Auto Loop dinonaktifkan",
+                Duration = 2,
+                Icon = "lucide:repeat-off"
             })
         end
     end,
@@ -1256,6 +1287,7 @@ AutoWalkTab:Section({
     Icon = "lucide:hand"
 })
 
+-- Spawnpoint Toggles
 local SCPToggle1 = AutoWalkTab:Toggle({
     Title = "Auto Walk (Spawnpoint Route 1)",
     Desc = "Walk from spawnpoint Route 1",
@@ -1301,6 +1333,7 @@ local SCPToggle3 = AutoWalkTab:Toggle({
     end,
 })
 
+-- Checkpoint Toggles
 local CP1Toggle = AutoWalkTab:Toggle({
     Title = "Auto Walk (Checkpoint 1)",
     Desc = "Walk from checkpoint 1",
@@ -1395,83 +1428,119 @@ local CP5Toggle = AutoWalkTab:Toggle({
 -- AUTOMATIC TAB
 -------------------------------------------------------------
 AutomaticTab:Section({
-    Title = "Checkpoint Detection",
+    Title = "Automatic Detection",
     Icon = "lucide:radar"
 })
 
+-- Auto Detect Checkpoint Toggle
 local AutoDetectToggle = AutomaticTab:Toggle({
-    Title = "Auto Detect Checkpoint",
-    Desc = "Pause playback when checkpoint detected",
+    Title = "Auto Detect Checkpoint During Route",
+    Desc = "Pause replay when checkpoint detected",
     Default = false,
     Callback = function(Value)
-        autoDetectCheckpoint = Value
+        autoDetectEnabled = Value
         if Value then
             WindUI:Notify({
                 Title = "Auto Detect",
-                Content = "✅ Auto detect checkpoint aktif",
+                Content = "Auto Detect Checkpoint AKTIF",
                 Duration = 3,
                 Icon = "lucide:radar"
             })
         else
             WindUI:Notify({
                 Title = "Auto Detect",
-                Content = "❌ Auto detect checkpoint nonaktif",
-                Duration = 3,
-                Icon = "lucide:x"
+                Content = "Auto Detect Checkpoint NONAKTIF",
+                Duration = 2,
+                Icon = "lucide:radar-off"
             })
         end
     end,
 })
 
-local CPDelaySlider = AutomaticTab:Slider({
+-- Checkpoint Delay Dropdown
+local DelayDropdown = AutomaticTab:Dropdown({
     Title = "Delay After Checkpoint",
-    Desc = "Delay time after checkpoint detected (seconds)",
-    Min = 0,
-    Max = 10,
-    Default = 2,
-    Decimals = 0,
+    Desc = "Set delay after checkpoint detected",
+    Multi = false,
+    Default = "2 seconds",
+    List = {
+        "1 second",
+        "2 seconds",
+        "3 seconds",
+        "5 seconds",
+        "10 seconds"
+    },
     Callback = function(Value)
-        cpDelayAfterDetect = Value
+        if Value == "1 second" then
+            checkpointDelay = 1
+        elseif Value == "2 seconds" then
+            checkpointDelay = 2
+        elseif Value == "3 seconds" then
+            checkpointDelay = 3
+        elseif Value == "5 seconds" then
+            checkpointDelay = 5
+        elseif Value == "10 seconds" then
+            checkpointDelay = 10
+        end
         WindUI:Notify({
-            Title = "CP Delay",
-            Content = string.format("Delay diatur ke %d detik", Value),
+            Title = "Checkpoint Delay",
+            Content = "Delay diatur ke " .. Value,
             Duration = 2,
-            Icon = "lucide:clock"
+            Icon = "lucide:timer"
         })
     end,
 })
 
-local DetectionRangeSlider = AutomaticTab:Slider({
-    Title = "Detection Range (Studs)",
-    Desc = "Detection range for checkpoint",
-    Min = 10,
-    Max = 100,
-    Default = 50,
-    Decimals = 0,
+-- Detection Distance Dropdown
+local DistanceDropdown = AutomaticTab:Dropdown({
+    Title = "Detection Distance (Studs)",
+    Desc = "Set checkpoint detection range",
+    Multi = false,
+    Default = "10 studs",
+    List = {
+        "5 studs",
+        "10 studs",
+        "15 studs",
+        "20 studs",
+        "30 studs"
+    },
     Callback = function(Value)
-        cpDetectionRange = Value
+        if Value == "5 studs" then
+            detectionDistance = 5
+        elseif Value == "10 studs" then
+            detectionDistance = 10
+        elseif Value == "15 studs" then
+            detectionDistance = 15
+        elseif Value == "20 studs" then
+            detectionDistance = 20
+        elseif Value == "30 studs" then
+            detectionDistance = 30
+        end
         WindUI:Notify({
-            Title = "Detection Range",
-            Content = string.format("Range diatur ke %d studs", Value),
+            Title = "Detection Distance",
+            Content = "Jarak deteksi diatur ke " .. Value,
             Duration = 2,
-            Icon = "lucide:target"
+            Icon = "lucide:ruler"
         })
     end,
 })
 
+-- Keyword Input
 AutomaticTab:Input({
     Title = "Checkpoint Keyword",
-    Desc = "Keyword for checkpoint BasePart name",
+    Desc = "Set basepart name keyword for detection",
+    Placeholder = "Checkpoint",
     Default = "Checkpoint",
-    Placeholder = "Enter keyword...",
     Callback = function(Value)
-        cpKeyword = Value
-        WindUI:Notify({
-            Title = "Keyword Updated",
-            Content = string.format("Keyword: %s", Value),
-            Duration = 2,
-            Icon = "lucide:type"
-        })
+        if Value and Value ~= "" then
+            checkpointKeyword = Value
+            WindUI:Notify({
+                Title = "Checkpoint Keyword",
+                Content = "Keyword diatur ke: " .. Value,
+                Duration = 3,
+                Icon = "lucide:text-cursor"
+            })
+        end
     end,
 })
 
@@ -1485,6 +1554,7 @@ VisualTab:Section({
 
 local Lighting = game:GetService("Lighting")
 
+-- Time Slider
 local TimeSlider = VisualTab:Slider({
     Title = "🕒 Time Changer",
     Desc = "Change game time",
@@ -1505,30 +1575,31 @@ local TimeSlider = VisualTab:Slider({
 })
 
 VisualTab:Section({
-    Title = "Checkpoint Visual",
-    Icon = "lucide:eye"
+    Title = "Checkpoint Beam",
+    Icon = "lucide:zap"
 })
 
+-- CP Beam Visual Toggle
 local CPBeamToggle = VisualTab:Toggle({
     Title = "CP Beam Visual",
-    Desc = "Show beam when checkpoint detected",
+    Desc = "Show visual beam when checkpoint detected",
     Default = false,
     Callback = function(Value)
-        cpBeamVisual = Value
+        cpBeamEnabled = Value
         if Value then
             WindUI:Notify({
                 Title = "CP Beam",
-                Content = "✅ CP Beam visual aktif",
-                Duration = 3,
+                Content = "CP Beam Visual AKTIF",
+                Duration = 2,
                 Icon = "lucide:zap"
             })
         else
-            clearBeamVisuals()
+            clearBeams()
             WindUI:Notify({
                 Title = "CP Beam",
-                Content = "❌ CP Beam visual nonaktif",
-                Duration = 3,
-                Icon = "lucide:x"
+                Content = "CP Beam Visual NONAKTIF",
+                Duration = 2,
+                Icon = "lucide:zap-off"
             })
         end
     end,
@@ -1543,24 +1614,204 @@ RunAnimationTab:Section({
 })
 
 local RunAnimations = {
-    ["Run Animation 1"] = {Idle1="rbxassetid://122257458498464",Idle2="rbxassetid://102357151005774",Walk="http://www.roblox.com/asset/?id=18537392113",Run="rbxassetid://82598234841035",Jump="rbxassetid://75290611992385",Fall="http://www.roblox.com/asset/?id=11600206437",Climb="http://www.roblox.com/asset/?id=10921257536",Swim="http://www.roblox.com/asset/?id=10921264784",SwimIdle="http://www.roblox.com/asset/?id=10921265698"},
-    ["Run Animation 2"] = {Idle1="rbxassetid://122257458498464",Idle2="rbxassetid://102357151005774",Walk="rbxassetid://122150855457006",Run="rbxassetid://82598234841035",Jump="rbxassetid://75290611992385",Fall="rbxassetid://98600215928904",Climb="rbxassetid://88763136693023",Swim="rbxassetid://133308483266208",SwimIdle="rbxassetid://109346520324160"},
-    ["Run Animation 3"] = {Idle1="http://www.roblox.com/asset/?id=18537376492",Idle2="http://www.roblox.com/asset/?id=18537371272",Walk="http://www.roblox.com/asset/?id=18537392113",Run="http://www.roblox.com/asset/?id=18537384940",Jump="http://www.roblox.com/asset/?id=18537380791",Fall="http://www.roblox.com/asset/?id=18537367238",Climb="http://www.roblox.com/asset/?id=10921271391",Swim="http://www.roblox.com/asset/?id=99384245425157",SwimIdle="http://www.roblox.com/asset/?id=113199415118199"},
-    ["Run Animation 4"] = {Idle1="http://www.roblox.com/asset/?id=118832222982049",Idle2="http://www.roblox.com/asset/?id=76049494037641",Walk="http://www.roblox.com/asset/?id=92072849924640",Run="http://www.roblox.com/asset/?id=72301599441680",Jump="http://www.roblox.com/asset/?id=104325245285198",Fall="http://www.roblox.com/asset/?id=121152442762481",Climb="http://www.roblox.com/asset/?id=507765644",Swim="http://www.roblox.com/asset/?id=99384245425157",SwimIdle="http://www.roblox.com/asset/?id=113199415118199"},
-    ["Run Animation 5"] = {Idle1="http://www.roblox.com/asset/?id=656117400",Idle2="http://www.roblox.com/asset/?id=656118341",Walk="http://www.roblox.com/asset/?id=656121766",Run="http://www.roblox.com/asset/?id=656118852",Jump="http://www.roblox.com/asset/?id=656117878",Fall="http://www.roblox.com/asset/?id=656115606",Climb="http://www.roblox.com/asset/?id=656114359",Swim="http://www.roblox.com/asset/?id=910028158",SwimIdle="http://www.roblox.com/asset/?id=910030921"},
-    ["Run Animation 6"] = {Idle1="http://www.roblox.com/asset/?id=616006778",Idle2="http://www.roblox.com/asset/?id=616008087",Walk="http://www.roblox.com/asset/?id=616013216",Run="http://www.roblox.com/asset/?id=616010382",Jump="http://www.roblox.com/asset/?id=616008936",Fall="http://www.roblox.com/asset/?id=616005863",Climb="http://www.roblox.com/asset/?id=616003713",Swim="http://www.roblox.com/asset/?id=910028158",SwimIdle="http://www.roblox.com/asset/?id=910030921"},
-    ["Run Animation 7"] = {Idle1="http://www.roblox.com/asset/?id=1083195517",Idle2="http://www.roblox.com/asset/?id=1083214717",Walk="http://www.roblox.com/asset/?id=1083178339",Run="http://www.roblox.com/asset/?id=1083216690",Jump="http://www.roblox.com/asset/?id=1083218792",Fall="http://www.roblox.com/asset/?id=1083189019",Climb="http://www.roblox.com/asset/?id=1083182000",Swim="http://www.roblox.com/asset/?id=910028158",SwimIdle="http://www.roblox.com/asset/?id=910030921"},
-    ["Run Animation 8"] = {Idle1="http://www.roblox.com/asset/?id=616136790",Idle2="http://www.roblox.com/asset/?id=616138447",Walk="http://www.roblox.com/asset/?id=616146177",Run="http://www.roblox.com/asset/?id=616140816",Jump="http://www.roblox.com/asset/?id=616139451",Fall="http://www.roblox.com/asset/?id=616134815",Climb="http://www.roblox.com/asset/?id=616133594",Swim="http://www.roblox.com/asset/?id=910028158",SwimIdle="http://www.roblox.com/asset/?id=910030921"},
-    ["Run Animation 9"] = {Idle1="http://www.roblox.com/asset/?id=616088211",Idle2="http://www.roblox.com/asset/?id=616089559",Walk="http://www.roblox.com/asset/?id=616095330",Run="http://www.roblox.com/asset/?id=616091570",Jump="http://www.roblox.com/asset/?id=616090535",Fall="http://www.roblox.com/asset/?id=616087089",Climb="http://www.roblox.com/asset/?id=616086039",Swim="http://www.roblox.com/asset/?id=910028158",SwimIdle="http://www.roblox.com/asset/?id=910030921"},
-    ["Run Animation 10"] = {Idle1="http://www.roblox.com/asset/?id=910004836",Idle2="http://www.roblox.com/asset/?id=910009958",Walk="http://www.roblox.com/asset/?id=910034870",Run="http://www.roblox.com/asset/?id=910025107",Jump="http://www.roblox.com/asset/?id=910016857",Fall="http://www.roblox.com/asset/?id=910001910",Climb="http://www.roblox.com/asset/?id=616086039",Swim="http://www.roblox.com/asset/?id=910028158",SwimIdle="http://www.roblox.com/asset/?id=910030921"},
-    ["Run Animation 11"] = {Idle1="http://www.roblox.com/asset/?id=742637544",Idle2="http://www.roblox.com/asset/?id=742638445",Walk="http://www.roblox.com/asset/?id=742640026",Run="http://www.roblox.com/asset/?id=742638842",Jump="http://www.roblox.com/asset/?id=742637942",Fall="http://www.roblox.com/asset/?id=742637151",Climb="http://www.roblox.com/asset/?id=742636889",Swim="http://www.roblox.com/asset/?id=910028158",SwimIdle="http://www.roblox.com/asset/?id=910030921"},
-    ["Run Animation 12"] = {Idle1="http://www.roblox.com/asset/?id=616111295",Idle2="http://www.roblox.com/asset/?id=616113536",Walk="http://www.roblox.com/asset/?id=616122287",Run="http://www.roblox.com/asset/?id=616117076",Jump="http://www.roblox.com/asset/?id=616115533",Fall="http://www.roblox.com/asset/?id=616108001",Climb="http://www.roblox.com/asset/?id=616104706",Swim="http://www.roblox.com/asset/?id=910028158",SwimIdle="http://www.roblox.com/asset/?id=910030921"},
-    ["Run Animation 13"] = {Idle1="http://www.roblox.com/asset/?id=657595757",Idle2="http://www.roblox.com/asset/?id=657568135",Walk="http://www.roblox.com/asset/?id=657552124",Run="http://www.roblox.com/asset/?id=657564596",Jump="http://www.roblox.com/asset/?id=658409194",Fall="http://www.roblox.com/asset/?id=657600338",Climb="http://www.roblox.com/asset/?id=658360781",Swim="http://www.roblox.com/asset/?id=910028158",SwimIdle="http://www.roblox.com/asset/?id=910030921"},
-    ["Run Animation 14"] = {Idle1="http://www.roblox.com/asset/?id=616158929",Idle2="http://www.roblox.com/asset/?id=616160636",Walk="http://www.roblox.com/asset/?id=616168032",Run="http://www.roblox.com/asset/?id=616163682",Jump="http://www.roblox.com/asset/?id=616161997",Fall="http://www.roblox.com/asset/?id=616157476",Climb="http://www.roblox.com/asset/?id=616156119",Swim="http://www.roblox.com/asset/?id=910028158",SwimIdle="http://www.roblox.com/asset/?id=910030921"},
-    ["Run Animation 15"] = {Idle1="http://www.roblox.com/asset/?id=845397899",Idle2="http://www.roblox.com/asset/?id=845400520",Walk="http://www.roblox.com/asset/?id=845403856",Run="http://www.roblox.com/asset/?id=845386501",Jump="http://www.roblox.com/asset/?id=845398858",Fall="http://www.roblox.com/asset/?id=845396048",Climb="http://www.roblox.com/asset/?id=845392038",Swim="http://www.roblox.com/asset/?id=910028158",SwimIdle="http://www.roblox.com/asset/?id=910030921"},
-    ["Run Animation 16"] = {Idle1="http://www.roblox.com/asset/?id=782841498",Idle2="http://www.roblox.com/asset/?id=782845736",Walk="http://www.roblox.com/asset/?id=782843345",Run="http://www.roblox.com/asset/?id=782842708",Jump="http://www.roblox.com/asset/?id=782847020",Fall="http://www.roblox.com/asset/?id=782846423",Climb="http://www.roblox.com/asset/?id=782843869",Swim="http://www.roblox.com/asset/?id=18537389531",SwimIdle="http://www.roblox.com/asset/?id=18537387180"},
-    ["Run Animation 17"] = {Idle1="http://www.roblox.com/asset/?id=891621366",Idle2="http://www.roblox.com/asset/?id=891633237",Walk="http://www.roblox.com/asset/?id=891667138",Run="http://www.roblox.com/asset/?id=891636393",Jump="http://www.roblox.com/asset/?id=891627522",Fall="http://www.roblox.com/asset/?id=891617961",Climb="http://www.roblox.com/asset/?id=891609353",Swim="http://www.roblox.com/asset/?id=18537389531",SwimIdle="http://www.roblox.com/asset/?id=18537387180"},
-    ["Run Animation 18"] = {Idle1="http://www.roblox.com/asset/?id=750781874",Idle2="http://www.roblox.com/asset/?id=750782770",Walk="http://www.roblox.com/asset/?id=750785693",Run="http://www.roblox.com/asset/?id=750783738",Jump="http://www.roblox.com/asset/?id=750782230",Fall="http://www.roblox.com/asset/?id=750780242",Climb="http://www.roblox.com/asset/?id=750779899",Swim="http://www.roblox.com/asset/?id=18537389531",SwimIdle="http://www.roblox.com/asset/?id=18537387180"},
+    ["Run Animation 1"] = {
+        Idle1   = "rbxassetid://122257458498464",
+        Idle2   = "rbxassetid://102357151005774",
+        Walk    = "http://www.roblox.com/asset/?id=18537392113",
+        Run     = "rbxassetid://82598234841035",
+        Jump    = "rbxassetid://75290611992385",
+        Fall    = "http://www.roblox.com/asset/?id=11600206437",
+        Climb   = "http://www.roblox.com/asset/?id=10921257536",
+        Swim    = "http://www.roblox.com/asset/?id=10921264784",
+        SwimIdle= "http://www.roblox.com/asset/?id=10921265698"
+    },
+    ["Run Animation 2"] = {
+        Idle1   = "rbxassetid://122257458498464",
+        Idle2   = "rbxassetid://102357151005774",
+        Walk    = "rbxassetid://122150855457006",
+        Run     = "rbxassetid://82598234841035",
+        Jump    = "rbxassetid://75290611992385",
+        Fall    = "rbxassetid://98600215928904",
+        Climb   = "rbxassetid://88763136693023",
+        Swim    = "rbxassetid://133308483266208",
+        SwimIdle= "rbxassetid://109346520324160"
+    },
+    ["Run Animation 3"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=18537376492",
+        Idle2   = "http://www.roblox.com/asset/?id=18537371272",
+        Walk    = "http://www.roblox.com/asset/?id=18537392113",
+        Run     = "http://www.roblox.com/asset/?id=18537384940",
+        Jump    = "http://www.roblox.com/asset/?id=18537380791",
+        Fall    = "http://www.roblox.com/asset/?id=18537367238",
+        Climb   = "http://www.roblox.com/asset/?id=10921271391",
+        Swim    = "http://www.roblox.com/asset/?id=99384245425157",
+        SwimIdle= "http://www.roblox.com/asset/?id=113199415118199"
+    },
+    ["Run Animation 4"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=118832222982049",
+        Idle2   = "http://www.roblox.com/asset/?id=76049494037641",
+        Walk    = "http://www.roblox.com/asset/?id=92072849924640",
+        Run     = "http://www.roblox.com/asset/?id=72301599441680",
+        Jump    = "http://www.roblox.com/asset/?id=104325245285198",
+        Fall    = "http://www.roblox.com/asset/?id=121152442762481",
+        Climb   = "http://www.roblox.com/asset/?id=507765644",
+        Swim    = "http://www.roblox.com/asset/?id=99384245425157",
+        SwimIdle= "http://www.roblox.com/asset/?id=113199415118199"
+    },
+    ["Run Animation 5"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=656117400",
+        Idle2   = "http://www.roblox.com/asset/?id=656118341",
+        Walk    = "http://www.roblox.com/asset/?id=656121766",
+        Run     = "http://www.roblox.com/asset/?id=656118852",
+        Jump    = "http://www.roblox.com/asset/?id=656117878",
+        Fall    = "http://www.roblox.com/asset/?id=656115606",
+        Climb   = "http://www.roblox.com/asset/?id=656114359",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 6"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616006778",
+        Idle2   = "http://www.roblox.com/asset/?id=616008087",
+        Walk    = "http://www.roblox.com/asset/?id=616013216",
+        Run     = "http://www.roblox.com/asset/?id=616010382",
+        Jump    = "http://www.roblox.com/asset/?id=616008936",
+        Fall    = "http://www.roblox.com/asset/?id=616005863",
+        Climb   = "http://www.roblox.com/asset/?id=616003713",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 7"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=1083195517",
+        Idle2   = "http://www.roblox.com/asset/?id=1083214717",
+        Walk    = "http://www.roblox.com/asset/?id=1083178339",
+        Run     = "http://www.roblox.com/asset/?id=1083216690",
+        Jump    = "http://www.roblox.com/asset/?id=1083218792",
+        Fall    = "http://www.roblox.com/asset/?id=1083189019",
+        Climb   = "http://www.roblox.com/asset/?id=1083182000",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 8"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616136790",
+        Idle2   = "http://www.roblox.com/asset/?id=616138447",
+        Walk    = "http://www.roblox.com/asset/?id=616146177",
+        Run     = "http://www.roblox.com/asset/?id=616140816",
+        Jump    = "http://www.roblox.com/asset/?id=616139451",
+        Fall    = "http://www.roblox.com/asset/?id=616134815",
+        Climb   = "http://www.roblox.com/asset/?id=616133594",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 9"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616088211",
+        Idle2   = "http://www.roblox.com/asset/?id=616089559",
+        Walk    = "http://www.roblox.com/asset/?id=616095330",
+        Run     = "http://www.roblox.com/asset/?id=616091570",
+        Jump    = "http://www.roblox.com/asset/?id=616090535",
+        Fall    = "http://www.roblox.com/asset/?id=616087089",
+        Climb   = "http://www.roblox.com/asset/?id=616086039",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 10"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=910004836",
+        Idle2   = "http://www.roblox.com/asset/?id=910009958",
+        Walk    = "http://www.roblox.com/asset/?id=910034870",
+        Run     = "http://www.roblox.com/asset/?id=910025107",
+        Jump    = "http://www.roblox.com/asset/?id=910016857",
+        Fall    = "http://www.roblox.com/asset/?id=910001910",
+        Climb   = "http://www.roblox.com/asset/?id=616086039",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 11"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=742637544",
+        Idle2   = "http://www.roblox.com/asset/?id=742638445",
+        Walk    = "http://www.roblox.com/asset/?id=742640026",
+        Run     = "http://www.roblox.com/asset/?id=742638842",
+        Jump    = "http://www.roblox.com/asset/?id=742637942",
+        Fall    = "http://www.roblox.com/asset/?id=742637151",
+        Climb   = "http://www.roblox.com/asset/?id=742636889",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 12"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616111295",
+        Idle2   = "http://www.roblox.com/asset/?id=616113536",
+        Walk    = "http://www.roblox.com/asset/?id=616122287",
+        Run     = "http://www.roblox.com/asset/?id=616117076",
+        Jump    = "http://www.roblox.com/asset/?id=616115533",
+        Fall    = "http://www.roblox.com/asset/?id=616108001",
+        Climb   = "http://www.roblox.com/asset/?id=616104706",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 13"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=657595757",
+        Idle2   = "http://www.roblox.com/asset/?id=657568135",
+        Walk    = "http://www.roblox.com/asset/?id=657552124",
+        Run     = "http://www.roblox.com/asset/?id=657564596",
+        Jump    = "http://www.roblox.com/asset/?id=658409194",
+        Fall    = "http://www.roblox.com/asset/?id=657600338",
+        Climb   = "http://www.roblox.com/asset/?id=658360781",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 14"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616158929",
+        Idle2   = "http://www.roblox.com/asset/?id=616160636",
+        Walk    = "http://www.roblox.com/asset/?id=616168032",
+        Run     = "http://www.roblox.com/asset/?id=616163682",
+        Jump    = "http://www.roblox.com/asset/?id=616161997",
+        Fall    = "http://www.roblox.com/asset/?id=616157476",
+        Climb   = "http://www.roblox.com/asset/?id=616156119",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 15"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=845397899",
+        Idle2   = "http://www.roblox.com/asset/?id=845400520",
+        Walk    = "http://www.roblox.com/asset/?id=845403856",
+        Run     = "http://www.roblox.com/asset/?id=845386501",
+        Jump    = "http://www.roblox.com/asset/?id=845398858",
+        Fall    = "http://www.roblox.com/asset/?id=845396048",
+        Climb   = "http://www.roblox.com/asset/?id=845392038",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 16"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=782841498",
+        Idle2   = "http://www.roblox.com/asset/?id=782845736",
+        Walk    = "http://www.roblox.com/asset/?id=782843345",
+        Run     = "http://www.roblox.com/asset/?id=782842708",
+        Jump    = "http://www.roblox.com/asset/?id=782847020",
+        Fall    = "http://www.roblox.com/asset/?id=782846423",
+        Climb   = "http://www.roblox.com/asset/?id=782843869",
+        Swim    = "http://www.roblox.com/asset/?id=18537389531",
+        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
+    },
+    ["Run Animation 17"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=891621366",
+        Idle2   = "http://www.roblox.com/asset/?id=891633237",
+        Walk    = "http://www.roblox.com/asset/?id=891667138",
+        Run     = "http://www.roblox.com/asset/?id=891636393",
+        Jump    = "http://www.roblox.com/asset/?id=891627522",
+        Fall    = "http://www.roblox.com/asset/?id=891617961",
+        Climb   = "http://www.roblox.com/asset/?id=891609353",
+        Swim    = "http://www.roblox.com/asset/?id=18537389531",
+        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
+    },
+    ["Run Animation 18"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=750781874",
+        Idle2   = "http://www.roblox.com/asset/?id=750782770",
+        Walk    = "http://www.roblox.com/asset/?id=750785693",
+        Run     = "http://www.roblox.com/asset/?id=750783738",
+        Jump    = "http://www.roblox.com/asset/?id=750782230",
+        Fall    = "http://www.roblox.com/asset/?id=750780242",
+        Climb   = "http://www.roblox.com/asset/?id=750779899",
+        Swim    = "http://www.roblox.com/asset/?id=18537389531",
+        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
+    },
 }
 
 local OriginalAnimations = {}
@@ -1578,12 +1829,12 @@ end
 local function ApplyAnimations(Animate, Humanoid, AnimPack)
     Animate.idle.Animation1.AnimationId = AnimPack.Idle1
     Animate.idle.Animation2.AnimationId = AnimPack.Idle2
-    Animate.walk.WalkAnim.AnimationId = AnimPack.Walk
-    Animate.run.RunAnim.AnimationId = AnimPack.Run
-    Animate.jump.JumpAnim.AnimationId = AnimPack.Jump
-    Animate.fall.FallAnim.AnimationId = AnimPack.Fall
+    Animate.walk.WalkAnim.AnimationId   = AnimPack.Walk
+    Animate.run.RunAnim.AnimationId     = AnimPack.Run
+    Animate.jump.JumpAnim.AnimationId   = AnimPack.Jump
+    Animate.fall.FallAnim.AnimationId   = AnimPack.Fall
     Animate.climb.ClimbAnim.AnimationId = AnimPack.Climb
-    Animate.swim.Swim.AnimationId = AnimPack.Swim
+    Animate.swim.Swim.AnimationId       = AnimPack.Swim
     Animate.swimidle.SwimIdle.AnimationId = AnimPack.SwimIdle
     Humanoid.Jump = true
 end
@@ -1614,9 +1865,11 @@ if Players.LocalPlayer.Character then
     SetupCharacter(Players.LocalPlayer.Character)
 end
 
+-- Create toggles for all animation packs
 for i = 1, 18 do
     local name = "Run Animation " .. i
     local pack = RunAnimations[name]
+
     RunAnimationTab:Toggle({
         Title = name,
         Desc = "Apply " .. name,
@@ -1628,6 +1881,7 @@ for i = 1, 18 do
                 CurrentPack = nil
                 RestoreOriginal()
             end
+
             local Char = Players.LocalPlayer.Character
             if Char and Char:FindFirstChild("Animate") and Char:FindFirstChild("Humanoid") then
                 if CurrentPack then
@@ -1651,12 +1905,14 @@ UpdateTab:Section({
 local updateEnabled = false
 local stopUpdate = {false}
 
+-- Create label for file checking status
 local updateStatusParagraph = UpdateTab:Paragraph({
     Title = "File Status",
     Desc = "Pengecekan file...",
     Color = "Yellow"
 })
 
+-- Task for checking JSON files during startup
 task.spawn(function()
     for i, f in ipairs(jsonFiles) do
         local ok = EnsureJsonFile(f)
@@ -1675,6 +1931,7 @@ task.spawn(function()
     })
 end)
 
+-- Update Script Toggle
 local UpdateToggle = UpdateTab:Toggle({
     Title = "Mulai Update Script",
     Desc = "Download ulang semua file JSON",
@@ -1689,20 +1946,26 @@ local UpdateToggle = UpdateTab:Toggle({
                     Desc = "🔄 Proses update file...",
                     Color = "Yellow"
                 })
+                
+                -- Delete all existing JSON files
                 for _, f in ipairs(jsonFiles) do
                     local savePath = jsonFolder .. "/" .. f
                     if isfile(savePath) then
                         delfile(savePath)
                     end
                 end
+                
+                -- Re-download all JSON files
                 for i, f in ipairs(jsonFiles) do
                     if stopUpdate[1] then break end
+                    
                     WindUI:Notify({
                         Title = "Update Script",
                         Content = "Proses Update " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
                         Duration = 2,
                         Icon = "lucide:download",
                     })
+                    
                     local ok, res = pcall(function() return game:HttpGet(baseURL..f) end)
                     if ok and res and #res > 0 then
                         writefile(jsonFolder.."/"..f, res)
@@ -1726,6 +1989,8 @@ local UpdateToggle = UpdateTab:Toggle({
                     end
                     task.wait(0.3)
                 end
+                
+                -- Update result notification
                 if not stopUpdate[1] then
                     WindUI:Notify({
                         Title = "Update Script",
@@ -1741,6 +2006,8 @@ local UpdateToggle = UpdateTab:Toggle({
                         Icon = "lucide:x-circle",
                     })
                 end
+                
+                -- Re-check all files after updating
                 for i, f in ipairs(jsonFiles) do
                     local ok = EnsureJsonFile(f)
                     updateStatusParagraph:Set({
@@ -1767,25 +2034,71 @@ local UpdateToggle = UpdateTab:Toggle({
 -- CREDITS TAB
 -------------------------------------------------------------
 CreditsTab:Section({
+    Title = "User Info",
+    Icon = "lucide:user"
+})
+
+-- User Info with Avatar
+CreditsTab:Paragraph({
+    Title = "Player Info",
+    Desc = "Username: " .. player.Name .. "\nDisplay: " .. player.DisplayName .. "\nUserID: " .. player.UserId,
+    Color = "Cyan",
+    Image = avatarUrl
+})
+
+CreditsTab:Section({
     Title = "Credits List",
     Icon = "lucide:users"
 })
 
+-- UI Credit
 CreditsTab:Paragraph({
     Title = "UI Library",
     Desc = "WindUI Interface by .ftgs",
     Color = "Blue"
 })
 
+-- Developer Credit
 CreditsTab:Paragraph({
     Title = "Developer",
     Desc = "Script by RullzsyHUB",
     Color = "Purple"
 })
 
-CreditsTab:Paragraph({
+-- Social Media
+CreditsTab:Section({
     Title = "Social Media",
-    Desc = "Follow TikTok: @rullzsy99",
+    Icon = "lucide:share-2"
+})
+
+-- Telegram Button
+CreditsTab:Button({
+    Title = "Join Telegram",
+    Desc = "Join our Telegram community",
+    Callback = function()
+        if setclipboard then
+            setclipboard("https://t.me/RullzsyHUB")
+            WindUI:Notify({
+                Title = "Telegram",
+                Content = "Telegram link copied to clipboard!",
+                Duration = 3,
+                Icon = "lucide:message-circle"
+            })
+        else
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Clipboard not supported",
+                Duration = 3,
+                Icon = "lucide:x"
+            })
+        end
+    end
+})
+
+-- TikTok
+CreditsTab:Paragraph({
+    Title = "TikTok",
+    Desc = "Follow: @rullzsy99",
     Color = "Green",
     Buttons = {
         {
@@ -1809,28 +2122,6 @@ CreditsTab:Paragraph({
                     })
                 end
             end
-        },
-        {
-            Title = "Telegram",
-            Icon = "lucide:send",
-            Callback = function()
-                if setclipboard then
-                    setclipboard("https://t.me/rullzsyhub")
-                    WindUI:Notify({
-                        Title = "Credits",
-                        Content = "Telegram link copied!",
-                        Duration = 3,
-                        Icon = "lucide:check"
-                    })
-                else
-                    WindUI:Notify({
-                        Title = "Error",
-                        Content = "Clipboard not supported",
-                        Duration = 3,
-                        Icon = "lucide:x"
-                    })
-                end
-            end
         }
     }
 })
@@ -1840,11 +2131,12 @@ CreditsTab:Paragraph({
 -------------------------------------------------------------
 WindUI:Notify({
     Title = "Script Loaded",
-    Content = "RullzsyHUB | Mount Yahayuk berhasil dimuat!",
+    Content = "RullzsyHUB | Mount Yahayuk v1.0.0 berhasil dimuat!",
     Duration = 5,
     Icon = "lucide:check-circle"
 })
 
+-- Add version tag
 Window:Tag({
     Title = "v1.0.0",
     Color = Color3.fromHex("#30ff6a"),
