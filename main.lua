@@ -87,7 +87,7 @@ if not isfolder(jsonFolder) then
 end
 
 -- Server URL and JSON checkpoint file list
-local baseURL = "https://raw.githubusercontent.com/yrejinho/Replays/refs/heads/main/json_mount_yahayuk_v1/"
+local baseURL = "https://raw.githubusercontent.com/yrejinhoo/Replays/refs/heads/main/YAHAYUK/"
 local jsonFiles = {
     "spawnpoint_jalur_1.json",
     "spawnpoint_jalur_2.json",
@@ -95,7 +95,7 @@ local jsonFiles = {
     "checkpoint_1.json",
     "checkpoint_2.json",
     "checkpoint_3.json",
-    "checkpoint_4_jalur_1.json",
+    "checkpoint_4_jalur_1_new.json",
     "checkpoint_4_jalur_2.json",
     "checkpoint_5.json",
 }
@@ -1361,12 +1361,12 @@ local CP3Toggle = AutoWalkTab:Toggle({
 })
 
 local CP4Toggle1 = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 4 Route 1)",
+    Title = "[ UPD ] Auto Walk (Checkpoint 4 Route 1)",
     Desc = "Walk from checkpoint 4 Route 1",
     Default = false,
     Callback = function(Value)
         if Value then
-            playSingleCheckpointFile("checkpoint_4_jalur_1.json", 7)
+            playSingleCheckpointFile("checkpoint_4_jalur_1_new.json", 7)
         else
             autoLoopEnabled = false
             isManualMode = false
