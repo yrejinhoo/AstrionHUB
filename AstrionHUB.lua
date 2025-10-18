@@ -127,8 +127,8 @@ local currentFlipRotation = CFrame.new()
 -- Auto Detect Checkpoint Variables
 local autoDetectEnabled = false
 local cpBeamEnabled = false
-local checkpointDelay = 2
-local detectionDistance = 10
+local checkpointDelay = 10
+local detectionDistance = 25
 local checkpointKeyword = "Checkpoint"
 local detectedCheckpoints = {}
 local beamParts = {}
@@ -395,7 +395,7 @@ local function startPlayback(data, onComplete)
         if not isPlaying then return end
         
         -- Check for checkpoint detection
-        if autoDetectEnabled and checkForCheckpoint() then
+        if autoDetectEnabled and loopingEnabled and checkForCheckpoint() then
             isPaused = true
             WindUI:Notify({
                 Title = "Auto Detect",
@@ -552,95 +552,77 @@ local function startAutoWalkSequence()
     playNext()
 end
 
+local function walkToStart(startPos)
+    if not character or not character:FindFirstChild("HumanoidRootPart") then
+        return false
+    end
+    
+    local hrp = character.HumanoidRootPart
+    local distance = (hrp.Position - startPos).Magnitude
+    
+    if distance > 100 then
+        WindUI:Notify({
+            Title = "Auto Walk (Manual)",
+            Content = string.format("Terlalu jauh (%.0f studs). Maks 100 studs untuk memulai.", distance),
+            Duration = 4,
+            Icon = "lucide:alert-triangle"
+        })
+        return false
+    end
+    
+    WindUI:Notify({
+        Title = "Auto Walk (Manual)",
+        Content = string.format("Menuju titik awal... (%.0f studs)", distance),
+        Duration = 3,
+        Icon = "lucide:footprints"
+    })
+    
+    local humanoidLocal = character:FindFirstChildOfClass("Humanoid")
+    if not humanoidLocal then
+        return false
+    end
+    
+    local reached = false
+    local reachedConnection
+    reachedConnection = humanoidLocal.MoveToFinished:Connect(function(r)
+        reached = r
+        if reachedConnection then
+            reachedConnection:Disconnect()
+            reachedConnection = nil
+        end
+    end)
+    
+    humanoidLocal:MoveTo(startPos)
+    
+    local timeout = 20
+    local waited = 0
+    while not reached and waited < timeout and autoLoopEnabled do
+        task.wait(0.25)
+        waited = waited + 0.25
+    end
+    
+    if reached then
+        WindUI:Notify({
+            Title = "Auto Walk (Manual)",
+            Content = "Sudah sampai titik awal. Memulai playback...",
+            Duration = 2,
+            Icon = "lucide:play"
+        })
+        return true
+    else
+        if reachedConnection then
+            reachedConnection:Disconnect()
+            reachedConnection = nil
+        end
+        return false
+    end
+end
+
 local function startManualAutoWalkSequence(startCheckpoint)
     currentCheckpoint = startCheckpoint - 1
     isManualMode = true
     autoLoopEnabled = true
-    local function walkToStartIfNeeded(data)
-        if not character or not character:FindFirstChild("HumanoidRootPart") then
-            WindUI:Notify({
-                Title = "Auto Walk (Manual)",
-                Content = "Character belum siap (HRP tidak ditemukan).",
-                Duration = 3,
-                Icon = "lucide:ban"
-            })
-            return false
-        end
-        local hrp = character.HumanoidRootPart
-        if not data or not data[1] or not data[1].position then
-            return true
-        end
-        local startPos = tableToVec(data[1].position)
-        local distance = (hrp.Position - startPos).Magnitude
-        if distance > 100 then
-            WindUI:Notify({
-                Title = "Auto Walk (Manual)",
-                Content = string.format("Terlalu jauh (%.0f studs). Maks 100 studs untuk memulai.", distance),
-                Duration = 4,
-                Icon = "lucide:alert-triangle"
-            })
-            autoLoopEnabled = false
-            isManualMode = false
-            return false
-        end
-        WindUI:Notify({
-            Title = "Auto Walk (Manual)",
-            Content = string.format("Menuju titik awal... (%.0f studs)", distance),
-            Duration = 3,
-            Icon = "lucide:footprints"
-        })
-        local humanoidLocal = character:FindFirstChildOfClass("Humanoid")
-        if not humanoidLocal then
-            WindUI:Notify({
-                Title = "Auto Walk (Manual)",
-                Content = "Humanoid tidak ditemukan, gagal berjalan.",
-                Duration = 3,
-                Icon = "lucide:ban"
-            })
-            autoLoopEnabled = false
-            isManualMode = false
-            return false
-        end
-        local reached = false
-        local reachedConnection
-        reachedConnection = humanoidLocal.MoveToFinished:Connect(function(r)
-            reached = r
-            if reachedConnection then
-                reachedConnection:Disconnect()
-                reachedConnection = nil
-            end
-        end)
-        humanoidLocal:MoveTo(startPos)
-        local timeout = 20
-        local waited = 0
-        while not reached and waited < timeout and autoLoopEnabled do
-            task.wait(0.25)
-            waited = waited + 0.25
-        end
-        if reached then
-            WindUI:Notify({
-                Title = "Auto Walk (Manual)",
-                Content = "Sudah sampai titik awal. Memulai playback...",
-                Duration = 2,
-                Icon = "lucide:play"
-            })
-            return true
-        else
-            if reachedConnection then
-                reachedConnection:Disconnect()
-                reachedConnection = nil
-            end
-            WindUI:Notify({
-                Title = "Auto Walk (Manual)",
-                Content = "Gagal mencapai titik awal (timeout atau dibatalkan).",
-                Duration = 3,
-                Icon = "lucide:ban"
-            })
-            autoLoopEnabled = false
-            isManualMode = false
-            return false
-        end
-    end
+    
     local function playNext()
         if not autoLoopEnabled then return end
         currentCheckpoint = currentCheckpoint + 1
@@ -683,12 +665,18 @@ local function startManualAutoWalkSequence(startCheckpoint)
         local data = loadCheckpoint(checkpointFile)
         if data and #data > 0 then
             task.wait(0.5)
-            if isManualMode and currentCheckpoint == startCheckpoint then
-                local okWalk = walkToStartIfNeeded(data)
+            
+            -- Walk to start if it's the first checkpoint or if looping is enabled
+            if isManualMode and (currentCheckpoint == startCheckpoint or loopingEnabled) then
+                local firstPos = tableToVec(data[1].position)
+                local okWalk = walkToStart(firstPos)
                 if not okWalk then
+                    autoLoopEnabled = false
+                    isManualMode = false
                     return
                 end
             end
+            
             startPlayback(data, playNext)
         else
             WindUI:Notify({
@@ -1220,33 +1208,28 @@ local AlwaysSprintToggle = AutoWalkTab:Toggle({
 })
 
 -- Speed Dropdown
+local speedOptions = {}
+for i = 0.5, 10, 0.1 do
+    table.insert(speedOptions, string.format("%.1fx", i))
+end
+
 local SpeedDropdown = AutoWalkTab:Dropdown({
     Title = "⚡ Set Speed",
     Desc = "Adjust playback speed",
     Multi = false,
-    Default = "Normal (1.0x)",
-    List = {
-        "Very Slow (0.5x)",
-        "Slow (0.7x)",
-        "Normal (1.0x)",
-        "Fast (1.2x)"
-    },
+    Default = "1.0x",
+    List = speedOptions,
     Callback = function(Value)
-        if Value == "Very Slow (0.5x)" then
-            playbackSpeed = 0.5
-        elseif Value == "Slow (0.7x)" then
-            playbackSpeed = 0.7
-        elseif Value == "Normal (1.0x)" then
-            playbackSpeed = 1.0
-        elseif Value == "Fast (1.2x)" then
-            playbackSpeed = 1.2
+        local speed = tonumber(Value:match("([%d%.]+)"))
+        if speed then
+            playbackSpeed = speed
+            WindUI:Notify({
+                Title = "Set Speed",
+                Content = "Speed diatur ke " .. Value,
+                Duration = 2,
+                Icon = "lucide:gauge"
+            })
         end
-        WindUI:Notify({
-            Title = "Set Speed",
-            Content = "Speed diatur ke " .. Value,
-            Duration = 2,
-            Icon = "lucide:gauge"
-        })
     end,
 })
 
@@ -1263,11 +1246,9 @@ local AutoLoopToggle = AutoWalkTab:Toggle({
     Callback = function(Value)
         loopingEnabled = Value
         if Value then
-            autoDetectEnabled = true
-            cpBeamEnabled = true
             WindUI:Notify({
                 Title = "Auto Loop",
-                Content = "Auto Loop, Auto Detect & CP Beam diaktifkan!",
+                Content = "Auto Loop diaktifkan!",
                 Duration = 3,
                 Icon = "lucide:repeat"
             })
@@ -1457,77 +1438,87 @@ local AutoDetectToggle = AutomaticTab:Toggle({
     end,
 })
 
+-- CP Beam Visual Toggle
+local CPBeamToggle = AutomaticTab:Toggle({
+    Title = "CP Beam Visual",
+    Desc = "Show visual beam when checkpoint detected",
+    Default = false,
+    Callback = function(Value)
+        cpBeamEnabled = Value
+        if Value then
+            WindUI:Notify({
+                Title = "CP Beam",
+                Content = "CP Beam Visual AKTIF",
+                Duration = 2,
+                Icon = "lucide:zap"
+            })
+        else
+            clearBeams()
+            WindUI:Notify({
+                Title = "CP Beam",
+                Content = "CP Beam Visual NONAKTIF",
+                Duration = 2,
+                Icon = "lucide:zap-off"
+            })
+        end
+    end,
+})
+
 -- Checkpoint Delay Dropdown
+local delayOptions = {}
+for i = 10, 50 do
+    table.insert(delayOptions, i .. " seconds")
+end
+
 local DelayDropdown = AutomaticTab:Dropdown({
     Title = "Delay After Checkpoint",
     Desc = "Set delay after checkpoint detected",
     Multi = false,
-    Default = "2 seconds",
-    List = {
-        "1 second",
-        "2 seconds",
-        "3 seconds",
-        "5 seconds",
-        "10 seconds"
-    },
+    Default = "10 seconds",
+    List = delayOptions,
     Callback = function(Value)
-        if Value == "1 second" then
-            checkpointDelay = 1
-        elseif Value == "2 seconds" then
-            checkpointDelay = 2
-        elseif Value == "3 seconds" then
-            checkpointDelay = 3
-        elseif Value == "5 seconds" then
-            checkpointDelay = 5
-        elseif Value == "10 seconds" then
-            checkpointDelay = 10
+        local delay = tonumber(Value:match("(%d+)"))
+        if delay then
+            checkpointDelay = delay
+            WindUI:Notify({
+                Title = "Checkpoint Delay",
+                Content = "Delay diatur ke " .. Value,
+                Duration = 2,
+                Icon = "lucide:timer"
+            })
         end
-        WindUI:Notify({
-            Title = "Checkpoint Delay",
-            Content = "Delay diatur ke " .. Value,
-            Duration = 2,
-            Icon = "lucide:timer"
-        })
     end,
 })
 
 -- Detection Distance Dropdown
+local distanceOptions = {}
+for i = 25, 100, 5 do
+    table.insert(distanceOptions, i .. " studs")
+end
+
 local DistanceDropdown = AutomaticTab:Dropdown({
     Title = "Detection Distance (Studs)",
     Desc = "Set checkpoint detection range",
     Multi = false,
-    Default = "10 studs",
-    List = {
-        "5 studs",
-        "10 studs",
-        "15 studs",
-        "20 studs",
-        "30 studs"
-    },
+    Default = "25 studs",
+    List = distanceOptions,
     Callback = function(Value)
-        if Value == "5 studs" then
-            detectionDistance = 5
-        elseif Value == "10 studs" then
-            detectionDistance = 10
-        elseif Value == "15 studs" then
-            detectionDistance = 15
-        elseif Value == "20 studs" then
-            detectionDistance = 20
-        elseif Value == "30 studs" then
-            detectionDistance = 30
+        local distance = tonumber(Value:match("(%d+)"))
+        if distance then
+            detectionDistance = distance
+            WindUI:Notify({
+                Title = "Detection Distance",
+                Content = "Jarak deteksi diatur ke " .. Value,
+                Duration = 2,
+                Icon = "lucide:ruler"
+            })
         end
-        WindUI:Notify({
-            Title = "Detection Distance",
-            Content = "Jarak deteksi diatur ke " .. Value,
-            Duration = 2,
-            Icon = "lucide:ruler"
-        })
     end,
 })
 
 -- Keyword Input
 AutomaticTab:Input({
-    Title = "Checkpoint Keyword",
+    Title = "Keyword Basepart Checkpoint",
     Desc = "Set basepart name keyword for detection",
     Placeholder = "Checkpoint",
     Default = "Checkpoint",
@@ -1570,37 +1561,6 @@ local TimeSlider = VisualTab:Slider({
         else
             Lighting.Brightness = 0.5
             Lighting.OutdoorAmbient = Color3.fromRGB(50, 50, 100)
-        end
-    end,
-})
-
-VisualTab:Section({
-    Title = "Checkpoint Beam",
-    Icon = "lucide:zap"
-})
-
--- CP Beam Visual Toggle
-local CPBeamToggle = VisualTab:Toggle({
-    Title = "CP Beam Visual",
-    Desc = "Show visual beam when checkpoint detected",
-    Default = false,
-    Callback = function(Value)
-        cpBeamEnabled = Value
-        if Value then
-            WindUI:Notify({
-                Title = "CP Beam",
-                Content = "CP Beam Visual AKTIF",
-                Duration = 2,
-                Icon = "lucide:zap"
-            })
-        else
-            clearBeams()
-            WindUI:Notify({
-                Title = "CP Beam",
-                Content = "CP Beam Visual NONAKTIF",
-                Duration = 2,
-                Icon = "lucide:zap-off"
-            })
         end
     end,
 })
@@ -2140,5 +2100,5 @@ WindUI:Notify({
 Window:Tag({
     Title = "v1.0.0",
     Color = Color3.fromHex("#30ff6a"),
-    Radius = 8,
+    Radius = UDim.new(0, 8),
 })
