@@ -60,7 +60,7 @@ local Window = WindUI:CreateWindow({
     Title = "AstrionHUB | MOUNT YAHAYUK",
     Icon = "lucide:mountain",
     Author = "Powered By Jinho",
-    Folder = "RullzsyHUB_MountYahayuk",
+    Folder = "astrionHUB_MountYahayuk",
     Size = UDim2.fromOffset(580, 460),
     MinSize = Vector2.new(560, 350),
     MaxSize = Vector2.new(850, 560),
@@ -77,7 +77,7 @@ local Window = WindUI:CreateWindow({
 -- AUTO WALK
 -------------------------------------------------------------
 -----| AUTO WALK VARIABLES |-----
-local mainFolder = "RullzsyHUB"
+local mainFolder = "astrionHUB"
 local jsonFolder = mainFolder .. "/js_mount_yahayuk_v1"
 if not isfolder(mainFolder) then
     makefolder(mainFolder)
@@ -87,7 +87,7 @@ if not isfolder(jsonFolder) then
 end
 
 -- Server URL and JSON checkpoint file list
-local baseURL = "https://raw.githubusercontent.com/RullzsyHUB/roblox-scripts-json/refs/heads/main/json_mount_yahayuk_v1/"
+local baseURL = "https://raw.githubusercontent.com/yrejinho/Replays/refs/heads/main/json_mount_yahayuk_v1/"
 local jsonFiles = {
     "spawnpoint_jalur_1.json",
     "spawnpoint_jalur_2.json",
@@ -1189,14 +1189,14 @@ local AlwaysSprintToggle = AutoWalkTab:Toggle({
         if autoShift then
             WindUI:Notify({
                 Title = "Always Sprint",
-                Content = "Sprint Mode Aktif ✅",
+                Content = "Sprint Mode Aktif",
                 Duration = 3,
                 Icon = "lucide:zap"
             })
         else
             WindUI:Notify({
                 Title = "Always Sprint",
-                Content = "Sprint Mode Nonaktif ❌",
+                Content = "Sprint Mode Nonaktif",
                 Duration = 3,
                 Icon = "lucide:zap-off"
             })
@@ -1241,7 +1241,7 @@ AutoWalkTab:Section({
 
 local AutoLoopToggle = AutoWalkTab:Toggle({
     Title = "Enable Auto Loop",
-    Desc = "Automatically loop through all checkpoints",
+    Desc = "Automatically loop through all checkpoints [ NOT RECOMMENDED ]",
     Default = false,
     Callback = function(Value)
         loopingEnabled = Value
@@ -1416,7 +1416,7 @@ AutomaticTab:Section({
 -- Auto Detect Checkpoint Toggle
 local AutoDetectToggle = AutomaticTab:Toggle({
     Title = "Auto Detect Checkpoint During Route",
-    Desc = "Pause replay when checkpoint detected",
+    Desc = "Pause replay when checkpoint detected [ BUG ]",
     Default = false,
     Callback = function(Value)
         autoDetectEnabled = Value
@@ -1441,7 +1441,7 @@ local AutoDetectToggle = AutomaticTab:Toggle({
 -- CP Beam Visual Toggle
 local CPBeamToggle = AutomaticTab:Toggle({
     Title = "CP Beam Visual",
-    Desc = "Show visual beam when checkpoint detected",
+    Desc = "Show visual beam when checkpoint detected [ BUG ]",
     Default = false,
     Callback = function(Value)
         cpBeamEnabled = Value
@@ -2021,7 +2021,7 @@ CreditsTab:Paragraph({
 -- Developer Credit
 CreditsTab:Paragraph({
     Title = "Developer",
-    Desc = "Script by RullzsyHUB",
+    Desc = "Script by Jinho",
     Color = "Purple"
 })
 
@@ -2037,7 +2037,7 @@ CreditsTab:Button({
     Desc = "Join our Telegram community",
     Callback = function()
         if setclipboard then
-            setclipboard("https://t.me/RullzsyHUB")
+            setclipboard("https://t.me/")
             WindUI:Notify({
                 Title = "Telegram",
                 Content = "Telegram link copied to clipboard!",
@@ -2058,7 +2058,7 @@ CreditsTab:Button({
 -- TikTok
 CreditsTab:Paragraph({
     Title = "TikTok",
-    Desc = "Follow: @rullzsy99",
+    Desc = "Follow: jinho",
     Color = "Green",
     Buttons = {
         {
@@ -2066,7 +2066,7 @@ CreditsTab:Paragraph({
             Icon = "lucide:copy",
             Callback = function()
                 if setclipboard then
-                    setclipboard("@rullzsy99")
+                    setclipboard("@jinho")
                     WindUI:Notify({
                         Title = "Credits",
                         Content = "TikTok username copied!",
@@ -2091,7 +2091,7 @@ CreditsTab:Paragraph({
 -------------------------------------------------------------
 WindUI:Notify({
     Title = "Script Loaded",
-    Content = "RullzsyHUB | Mount Yahayuk v1.0.0 berhasil dimuat!",
+    Content = "AstrionHUB | Mount Yahayuk v1.0.0 berhasil dimuat!",
     Duration = 5,
     Icon = "lucide:check-circle"
 })
