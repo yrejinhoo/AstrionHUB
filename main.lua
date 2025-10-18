@@ -1207,25 +1207,31 @@ local AlwaysSprintToggle = AutoWalkTab:Toggle({
     end,
 })
 
--- Speed Dropdown
+-- Speed Dropdown (FIXED)
 local speedOptions = {}
-for i = 0.5, 10, 0.1 do
-    table.insert(speedOptions, string.format("%.1fx", i))
+for i = 5, 100 do
+    local speed = i / 10
+    table.insert(speedOptions, {
+        Title = string.format("%.1fx", speed),
+        Icon = "gauge"
+    })
 end
 
 local SpeedDropdown = AutoWalkTab:Dropdown({
     Title = "⚡ Set Speed",
     Desc = "Adjust playback speed",
-    Multi = false,
-    Default = "1.0x",
-    List = speedOptions,
-    Callback = function(Value)
-        local speed = tonumber(Value:match("([%d%.]+)"))
+    Values = speedOptions,
+    Value = {
+        Title = "1.0x",
+        Icon = "gauge"
+    },
+    Callback = function(option)
+        local speed = tonumber(option.Title:match("([%d%.]+)"))
         if speed then
             playbackSpeed = speed
             WindUI:Notify({
                 Title = "Set Speed",
-                Content = "Speed diatur ke " .. Value,
+                Content = "Speed diatur ke " .. option.Title,
                 Duration = 2,
                 Icon = "lucide:gauge"
             })
@@ -1464,25 +1470,30 @@ local CPBeamToggle = AutomaticTab:Toggle({
     end,
 })
 
--- Checkpoint Delay Dropdown
+-- Checkpoint Delay Dropdown (FIXED)
 local delayOptions = {}
 for i = 10, 50 do
-    table.insert(delayOptions, i .. " seconds")
+    table.insert(delayOptions, {
+        Title = i .. " seconds",
+        Icon = "timer"
+    })
 end
 
 local DelayDropdown = AutomaticTab:Dropdown({
     Title = "Delay After Checkpoint",
     Desc = "Set delay after checkpoint detected",
-    Multi = false,
-    Default = "10 seconds",
-    List = delayOptions,
-    Callback = function(Value)
-        local delay = tonumber(Value:match("(%d+)"))
+    Values = delayOptions,
+    Value = {
+        Title = "10 seconds",
+        Icon = "timer"
+    },
+    Callback = function(option)
+        local delay = tonumber(option.Title:match("(%d+)"))
         if delay then
             checkpointDelay = delay
             WindUI:Notify({
                 Title = "Checkpoint Delay",
-                Content = "Delay diatur ke " .. Value,
+                Content = "Delay diatur ke " .. option.Title,
                 Duration = 2,
                 Icon = "lucide:timer"
             })
@@ -1490,25 +1501,30 @@ local DelayDropdown = AutomaticTab:Dropdown({
     end,
 })
 
--- Detection Distance Dropdown
+-- Detection Distance Dropdown (FIXED)
 local distanceOptions = {}
 for i = 25, 100, 5 do
-    table.insert(distanceOptions, i .. " studs")
+    table.insert(distanceOptions, {
+        Title = i .. " studs",
+        Icon = "ruler"
+    })
 end
 
 local DistanceDropdown = AutomaticTab:Dropdown({
     Title = "Detection Distance (Studs)",
     Desc = "Set checkpoint detection range",
-    Multi = false,
-    Default = "25 studs",
-    List = distanceOptions,
-    Callback = function(Value)
-        local distance = tonumber(Value:match("(%d+)"))
+    Values = distanceOptions,
+    Value = {
+        Title = "25 studs",
+        Icon = "ruler"
+    },
+    Callback = function(option)
+        local distance = tonumber(option.Title:match("(%d+)"))
         if distance then
             detectionDistance = distance
             WindUI:Notify({
                 Title = "Detection Distance",
-                Content = "Jarak deteksi diatur ke " .. Value,
+                Content = "Jarak deteksi diatur ke " .. option.Title,
                 Duration = 2,
                 Icon = "lucide:ruler"
             })
@@ -1516,12 +1532,12 @@ local DistanceDropdown = AutomaticTab:Dropdown({
     end,
 })
 
--- Keyword Input
+-- Keyword Input (FIXED)
 AutomaticTab:Input({
     Title = "Keyword Basepart Checkpoint",
     Desc = "Set basepart name keyword for detection",
     Placeholder = "Checkpoint",
-    Default = "Checkpoint",
+    Value = "Checkpoint",
     Callback = function(Value)
         if Value and Value ~= "" then
             checkpointKeyword = Value
@@ -1545,14 +1561,16 @@ VisualTab:Section({
 
 local Lighting = game:GetService("Lighting")
 
--- Time Slider
+-- Time Slider (FIXED)
 local TimeSlider = VisualTab:Slider({
     Title = "🕒 Time Changer",
     Desc = "Change game time",
-    Min = 0,
-    Max = 24,
-    Default = Lighting.ClockTime,
-    Decimals = 0,
+    Step = 1,
+    Value = {
+        Min = 0,
+        Max = 24,
+        Default = Lighting.ClockTime
+    },
     Callback = function(Value)
         Lighting.ClockTime = Value
         if Value >= 6 and Value < 18 then
@@ -1865,29 +1883,26 @@ UpdateTab:Section({
 local updateEnabled = false
 local stopUpdate = {false}
 
--- Create label for file checking status
+-- Create paragraph for file checking status
 local updateStatusParagraph = UpdateTab:Paragraph({
     Title = "File Status",
     Desc = "Pengecekan file...",
-    Color = "Yellow"
 })
 
 -- Task for checking JSON files during startup
 task.spawn(function()
     for i, f in ipairs(jsonFiles) do
         local ok = EnsureJsonFile(f)
-        local status = (ok and "✔ Proses Cek File: " or "❌ Gagal: ") .. " (" .. i .. "/" .. #jsonFiles .. ")"
+        local status = (ok and "✔ Proses Cek File: " or "❌ Gagal: ") .. f .. " (" .. i .. "/" .. #jsonFiles .. ")"
         updateStatusParagraph:Set({
             Title = "File Status",
             Desc = status,
-            Color = ok and "Green" or "Red"
         })
         task.wait(0.5)
     end
     updateStatusParagraph:Set({
         Title = "File Status",
         Desc = "✔ Semua file aman",
-        Color = "Green"
     })
 end)
 
@@ -1904,7 +1919,6 @@ local UpdateToggle = UpdateTab:Toggle({
                 updateStatusParagraph:Set({
                     Title = "Update Status",
                     Desc = "🔄 Proses update file...",
-                    Color = "Yellow"
                 })
                 
                 -- Delete all existing JSON files
@@ -1932,7 +1946,6 @@ local UpdateToggle = UpdateTab:Toggle({
                         updateStatusParagraph:Set({
                             Title = "Update Status",
                             Desc = "📥 Proses Update: " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
-                            Color = "Blue"
                         })
                     else
                         WindUI:Notify({
@@ -1944,7 +1957,6 @@ local UpdateToggle = UpdateTab:Toggle({
                         updateStatusParagraph:Set({
                             Title = "Update Status",
                             Desc = "❌ Gagal: " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
-                            Color = "Red"
                         })
                     end
                     task.wait(0.3)
@@ -1973,14 +1985,12 @@ local UpdateToggle = UpdateTab:Toggle({
                     updateStatusParagraph:Set({
                         Title = "File Check",
                         Desc = (ok and "✔ Cek File: " or "❌ Failed: ") .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
-                        Color = ok and "Green" or "Red"
                     })
                     task.wait(0.3)
                 end
                 updateStatusParagraph:Set({
                     Title = "File Status",
                     Desc = "✔ Semua file aman",
-                    Color = "Green"
                 })
             end)
         else
@@ -2002,7 +2012,6 @@ CreditsTab:Section({
 CreditsTab:Paragraph({
     Title = "Player Info",
     Desc = "Username: " .. player.Name .. "\nDisplay: " .. player.DisplayName .. "\nUserID: " .. player.UserId,
-    Color = "Cyan",
     Image = avatarUrl
 })
 
@@ -2015,14 +2024,12 @@ CreditsTab:Section({
 CreditsTab:Paragraph({
     Title = "UI Library",
     Desc = "WindUI Interface by .ftgs",
-    Color = "Blue"
 })
 
 -- Developer Credit
 CreditsTab:Paragraph({
     Title = "Developer",
     Desc = "Script by Jinho",
-    Color = "Purple"
 })
 
 -- Social Media
@@ -2058,12 +2065,11 @@ CreditsTab:Button({
 -- TikTok
 CreditsTab:Paragraph({
     Title = "TikTok",
-    Desc = "Follow: jinho",
-    Color = "Green",
+    Desc = "Follow: @jinho",
     Buttons = {
         {
             Title = "Copy TikTok",
-            Icon = "lucide:copy",
+            Icon = "copy",
             Callback = function()
                 if setclipboard then
                     setclipboard("@jinho")
