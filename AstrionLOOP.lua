@@ -1,3 +1,4 @@
+
 -------------------------------------------------------------
 -- LOAD LIBRARY UI
 -------------------------------------------------------------
@@ -28,6 +29,26 @@ WindUI:AddTheme({
 })
 
 -------------------------------------------------------------
+-- WINDOW PROCESS
+-------------------------------------------------------------
+local Window = WindUI:CreateWindow({
+    Title = "RullzsyHUB | MOUNT YAHAYUK",
+    Icon = "lucide:braces",
+    Author = "by RullzsyHUB",
+    Folder = "RullzsyHUB_MountYahayuk",
+    Size = UDim2.fromOffset(580, 460),
+    MinSize = Vector2.new(560, 350),
+    MaxSize = Vector2.new(850, 560),
+    Transparent = true,
+    Theme = "RullzsyHUB Theme",
+    Resizable = true,
+    SideBarWidth = 200,
+    BackgroundImageTransparency = 0.42,
+    HideSearchBar = false,
+    ScrollBarEnabled = true,
+})
+
+-------------------------------------------------------------
 -- SERVICES
 -------------------------------------------------------------
 local Players = game:GetService("Players")
@@ -46,37 +67,11 @@ local humanoid = character:WaitForChild("Humanoid")
 local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
 local setclipboard = setclipboard or toclipboard
 
--- Get avatar URL
-local avatarUrl = string.format(
-    "https://www.roblox.com/headshot-thumbnail/image?userId=%s&width=420&height=420&format=png",
-    player.UserId
-)
-
--------------------------------------------------------------
--- WINDOW PROCESS
--------------------------------------------------------------
-local Window = WindUI:CreateWindow({
-    Title = "AstrionHUB | MOUNT YAHAYUK",
-    Icon = "lucide:mountain",
-    Author = "Powered By Jinho",
-    Folder = "astrionHUB_MountYahayuk",
-    Size = UDim2.fromOffset(580, 460),
-    MinSize = Vector2.new(560, 350),
-    MaxSize = Vector2.new(850, 560),
-    Transparent = true,
-    Theme = "RullzsyHUB Theme",
-    Resizable = true,
-    SideBarWidth = 200,
-    BackgroundImageTransparency = 0.42,
-    HideSearchBar = false,
-    ScrollBarEnabled = true,
-})
-
 -------------------------------------------------------------
 -- AUTO WALK
 -------------------------------------------------------------
 -----| AUTO WALK VARIABLES |-----
-local mainFolder = "astrionHUB"
+local mainFolder = "RullzsyHUB"
 local jsonFolder = mainFolder .. "/js_mount_yahayuk_v1"
 if not isfolder(mainFolder) then
     makefolder(mainFolder)
@@ -86,17 +81,17 @@ if not isfolder(jsonFolder) then
 end
 
 -- Server URL and JSON checkpoint file list
-local baseURL = "https://raw.githubusercontent.com/yrejinhoo/Replays/refs/heads/main/YAHAYUK/"
+local baseURL = "https://raw.githubusercontent.com/RullzsyHUB/roblox-scripts-json/refs/heads/main/json_mount_yahayuk_v1/"
 local jsonFiles = {
     "spawnpoint_jalur_1.json",
     "spawnpoint_jalur_2.json",
-    "spawnpoint_jalur_3.json",
-    "checkpoint_1.json",
+	"spawnpoint_jalur_3.json",
+	"checkpoint_1.json",
     "checkpoint_2.json",
     "checkpoint_3.json",
-    "checkpoint_4_jalur_1_new.json",
+    "checkpoint_4_jalur_1.json",
     "checkpoint_4_jalur_2.json",
-    "checkpoint_5.json",
+	"checkpoint_5.json",
 }
 
 local isPlaying = false
@@ -122,17 +117,6 @@ local leftFootstep = true
 local isFlipped = false
 local FLIP_SMOOTHNESS = 0.05
 local currentFlipRotation = CFrame.new()
-
--- Auto Detect Checkpoint Variables
-local autoDetectEnabled = false
-local cpBeamEnabled = false
-local checkpointDelay = 10
-local detectionDistance = 25
-local checkpointKeyword = "Checkpoint"
-local detectedCheckpoints = {}
-local beamParts = {}
-local checkpointBeamConnection = nil
-local isWaitingAtCheckpoint = false
 
 -------------------------------------------------------------
 -----| AUTO WALK FUNCTIONS |-----
@@ -280,130 +264,6 @@ local function findSurroundingFrames(data, t)
     return i0, i1, alpha
 end
 
--- Create checkpoint beam visualization
-local function createCheckpointBeam(checkpointPosition)
-    if not cpBeamEnabled or not character or not character:FindFirstChild("HumanoidRootPart") then return end
-    
-    local hrp = character.HumanoidRootPart
-    
-    -- Create beam part at checkpoint
-    local beamPart = Instance.new("Part")
-    beamPart.Name = "CheckpointBeam"
-    beamPart.Anchored = true
-    beamPart.CanCollide = false
-    beamPart.Size = Vector3.new(1, 100, 1)
-    beamPart.Position = checkpointPosition
-    beamPart.Transparency = 0.5
-    beamPart.Color = Color3.fromRGB(0, 255, 0)
-    beamPart.Material = Enum.Material.Neon
-    beamPart.Parent = workspace
-    
-    -- Create line beam from player to checkpoint
-    local attach0 = Instance.new("Attachment", hrp)
-    local attach1 = Instance.new("Attachment", beamPart)
-    
-    local beam = Instance.new("Beam")
-    beam.Attachment0 = attach0
-    beam.Attachment1 = attach1
-    beam.Width0 = 0.5
-    beam.Width1 = 0.5
-    beam.Color = ColorSequence.new(Color3.fromRGB(0, 255, 0))
-    beam.FaceCamera = true
-    beam.Parent = hrp
-    
-    table.insert(beamParts, {part = beamPart, attachment0 = attach0, attachment1 = attach1, beam = beam})
-    
-    -- Auto remove after 5 seconds
-    task.spawn(function()
-        task.wait(5)
-        beam:Destroy()
-        attach0:Destroy()
-        attach1:Destroy()
-        beamPart:Destroy()
-    end)
-end
-
--- Clear all beam parts
-local function clearBeams()
-    for _, beamData in ipairs(beamParts) do
-        if beamData.beam and beamData.beam.Parent then beamData.beam:Destroy() end
-        if beamData.attachment0 and beamData.attachment0.Parent then beamData.attachment0:Destroy() end
-        if beamData.attachment1 and beamData.attachment1.Parent then beamData.attachment1:Destroy() end
-        if beamData.part and beamData.part.Parent then beamData.part:Destroy() end
-    end
-    beamParts = {}
-end
-
--- Check for nearby checkpoint
-local function checkForCheckpoint()
-    if not autoDetectEnabled or not character or not character:FindFirstChild("HumanoidRootPart") then
-        return false, nil
-    end
-    
-    local hrp = character.HumanoidRootPart
-    local nearbyParts = workspace:GetPartBoundsInRadius(hrp.Position, detectionDistance)
-    
-    for _, part in ipairs(nearbyParts) do
-        if part:IsA("BasePart") and string.find(string.lower(part.Name), string.lower(checkpointKeyword)) then
-            local partId = part:GetFullName()
-            if not detectedCheckpoints[partId] then
-                detectedCheckpoints[partId] = true
-                if cpBeamEnabled then
-                    createCheckpointBeam(part.Position)
-                end
-                return true, part
-            end
-        end
-    end
-    
-    return false, nil
-end
-
--- Start continuous checkpoint detection
-local function startCheckpointDetection()
-    if checkpointBeamConnection then
-        checkpointBeamConnection:Disconnect()
-    end
-    
-    checkpointBeamConnection = RunService.Heartbeat:Connect(function()
-        if autoDetectEnabled and loopingEnabled and isPlaying and not isWaitingAtCheckpoint then
-            local detected, checkpointPart = checkForCheckpoint()
-            if detected then
-                isWaitingAtCheckpoint = true
-                isPaused = true
-                
-                WindUI:Notify({
-                    Title = "Auto Detect",
-                    Content = "Checkpoint terdeteksi! Menunggu " .. checkpointDelay .. " detik...",
-                    Duration = checkpointDelay,
-                    Icon = "lucide:flag"
-                })
-                
-                task.wait(checkpointDelay)
-                
-                isPaused = false
-                isWaitingAtCheckpoint = false
-                
-                -- Clear this specific checkpoint from detected list after delay
-                if checkpointPart then
-                    detectedCheckpoints[checkpointPart:GetFullName()] = nil
-                end
-            end
-        end
-    end)
-end
-
--- Stop checkpoint detection
-local function stopCheckpointDetection()
-    if checkpointBeamConnection then
-        checkpointBeamConnection:Disconnect()
-        checkpointBeamConnection = nil
-    end
-    clearBeams()
-    detectedCheckpoints = {}
-    isWaitingAtCheckpoint = false
-end
-
 local function stopPlayback()
     isPlaying = false
     isPaused = false
@@ -415,9 +275,6 @@ local function stopPlayback()
     hipHeightOffset = 0
     isFlipped = false
     currentFlipRotation = CFrame.new()
-    detectedCheckpoints = {}
-    isWaitingAtCheckpoint = false
-    stopCheckpointDetection()
     if playbackConnection then
         playbackConnection:Disconnect()
         playbackConnection = nil
@@ -461,7 +318,6 @@ local function startPlayback(data, onComplete)
 
     playbackConnection = RunService.Heartbeat:Connect(function(deltaTime)
         if not isPlaying then return end
-        
         if isPaused then
             if pauseStartTime == 0 then
                 pauseStartTime = tick()
@@ -547,19 +403,8 @@ end
 
 local function startAutoWalkSequence()
     currentCheckpoint = 0
-    autoLoopEnabled = true
-    
-    -- Start checkpoint detection if enabled
-    if autoDetectEnabled and loopingEnabled then
-        startCheckpointDetection()
-    end
-    
     local function playNext()
-        if not autoLoopEnabled then
-            stopCheckpointDetection()
-            return
-        end
-        
+        if not autoLoopEnabled then return end
         currentCheckpoint = currentCheckpoint + 1
         if currentCheckpoint > #jsonFiles then
             if loopingEnabled then
@@ -569,12 +414,10 @@ local function startAutoWalkSequence()
                     Duration = 3,
                     Icon = "lucide:repeat"
                 })
-                detectedCheckpoints = {}  -- Reset detected checkpoints for new loop
                 task.wait(1)
                 startAutoWalkSequence()
             else
                 autoLoopEnabled = false
-                stopCheckpointDetection()
                 WindUI:Notify({
                     Title = "Auto Walk",
                     Content = "Auto walk selesai! Semua checkpoint sudah dilewati.",
@@ -594,14 +437,13 @@ local function startAutoWalkSequence()
                 Icon = "lucide:ban"
             })
             autoLoopEnabled = false
-            stopCheckpointDetection()
             return
         end
         local data = loadCheckpoint(checkpointFile)
         if data and #data > 0 then
             WindUI:Notify({
                 Title = "Auto Walk (Automatic)",
-                Content = "Checkpoint " .. currentCheckpoint .. " / " .. #jsonFiles,
+                Content = "Auto walk berhasil dijalankan",
                 Duration = 2,
                 Icon = "lucide:bot"
             })
@@ -615,1474 +457,102 @@ local function startAutoWalkSequence()
                 Icon = "lucide:ban"
             })
             autoLoopEnabled = false
-            stopCheckpointDetection()
         end
     end
     playNext()
-end
-
-local function walkToStart(startPos)
-    if not character or not character:FindFirstChild("HumanoidRootPart") then
-        return false
-    end
-    
-    local hrp = character.HumanoidRootPart
-    local distance = (hrp.Position - startPos).Magnitude
-    
-    if distance > 100 then
-        WindUI:Notify({
-            Title = "Auto Walk (Manual)",
-            Content = string.format("Terlalu jauh (%.0f studs)! Harus dalam jarak 100.", distance),
-            Duration = 4,
-            Icon = "lucide:alert-triangle"
-        })
-        return
-    end
-    WindUI:Notify({
-        Title = "Auto Walk (Manual)",
-        Content = string.format("Menuju ke titik awal... (%.0f studs)", distance),
-        Duration = 3,
-        Icon = "lucide:footprints"
-    })
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    local moving = true
-    humanoid:MoveTo(startPos)
-    local reachedConnection
-    reachedConnection = humanoid.MoveToFinished:Connect(function(reached)
-        if reached then
-            moving = false
-            reachedConnection:Disconnect()
-            WindUI:Notify({
-                Title = "Auto Walk (Manual)",
-                Content = "Sudah sampai di titik awal, mulai playback...",
-                Duration = 2,
-                Icon = "lucide:play"
-            })
-            task.wait(0.5)
-            startPlayback(data, function()
-                WindUI:Notify({
-                    Title = "Auto Walk (Manual)",
-                    Content = "Auto walk selesai!",
-                    Duration = 2,
-                    Icon = "lucide:check-check"
-                })
-            end)
-        else
-            WindUI:Notify({
-                Title = "Auto Walk (Manual)",
-                Content = "Gagal mencapai titik awal!",
-                Duration = 3,
-                Icon = "lucide:ban"
-            })
-            moving = false
-            reachedConnection:Disconnect()
-        end
-    end)
-    task.spawn(function()
-        local timeout = 20
-        local elapsed = 0
-        while moving and elapsed < timeout do
-            task.wait(1)
-            elapsed += 1
-        end
-        if moving then
-            WindUI:Notify({
-                Title = "Auto Walk (Manual)",
-                Content = "Tidak bisa mencapai titik awal (timeout)!",
-                Duration = 3,
-                Icon = "lucide:ban"
-            })
-            humanoid:Move(Vector3.new(0,0,0))
-            moving = false
-            if reachedConnection then reachedConnection:Disconnect() end
-        end
-    end)
-end
-
-player.CharacterAdded:Connect(function(newChar)
-    character = newChar
-    humanoid = character:WaitForChild("Humanoid")
-    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
-    if isPlaying then stopPlayback() end
-end)
-
--------------------------------------------------------------
--- PAUSE/ROTATE UI (MOBILE FRIENDLY & DRAGGABLE)
--------------------------------------------------------------
-local BTN_COLOR = Color3.fromRGB(38, 38, 38)
-local BTN_HOVER = Color3.fromRGB(55, 55, 55)
-local TEXT_COLOR = Color3.fromRGB(230, 230, 230)
-local WARN_COLOR = Color3.fromRGB(255, 140, 0)
-local SUCCESS_COLOR = Color3.fromRGB(0, 170, 85)
-local ROTATE_COLOR = Color3.fromRGB(100, 100, 255)
-
-local function createPauseRotateUI()
-    local ui = Instance.new("ScreenGui")
-    ui.Name = "PauseRotateUI"
-    ui.IgnoreGuiInset = true
-    ui.ResetOnSpawn = false
-    ui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    ui.Parent = CoreGui
-
-    local bgFrame = Instance.new("Frame")
-    bgFrame.Name = "PR_Background"
-    bgFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    bgFrame.BackgroundTransparency = 0.4
-    bgFrame.BorderSizePixel = 0
-    bgFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    bgFrame.Position = UDim2.new(0.5, 0, 0.85, 0)
-    bgFrame.Size = UDim2.new(0, 130, 0, 70)
-    bgFrame.Visible = false
-    bgFrame.Parent = ui
-
-    local bgCorner = Instance.new("UICorner", bgFrame)
-    bgCorner.CornerRadius = UDim.new(0, 20)
-
-    local dragIndicator = Instance.new("Frame")
-    dragIndicator.Name = "DragIndicator"
-    dragIndicator.BackgroundTransparency = 1
-    dragIndicator.Position = UDim2.new(0.5, 0, 0, 8)
-    dragIndicator.Size = UDim2.new(0, 40, 0, 6)
-    dragIndicator.AnchorPoint = Vector2.new(0.5, 0)
-    dragIndicator.Parent = bgFrame
-
-    local dotLayout = Instance.new("UIListLayout", dragIndicator)
-    dotLayout.FillDirection = Enum.FillDirection.Horizontal
-    dotLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    dotLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-    dotLayout.Padding = UDim.new(0, 6)
-
-    for i = 1, 3 do
-        local dot = Instance.new("Frame")
-        dot.Name = "Dot" .. i
-        dot.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
-        dot.BackgroundTransparency = 0.3
-        dot.BorderSizePixel = 0
-        dot.Size = UDim2.new(0, 6, 0, 6)
-        dot.Parent = dragIndicator
-        local dotCorner = Instance.new("UICorner", dot)
-        dotCorner.CornerRadius = UDim.new(1, 0)
-    end
-
-    local mainFrame = Instance.new("Frame")
-    mainFrame.Name = "PR_Main"
-    mainFrame.BackgroundTransparency = 1
-    mainFrame.BorderSizePixel = 0
-    mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
-    mainFrame.Position = UDim2.new(0.5, 0, 0.6, 0)
-    mainFrame.Size = UDim2.new(1, -10, 0, 50)
-    mainFrame.Parent = bgFrame
-
-    local dragging = false
-    local dragInput, dragStart, startPos
-    local UserInputService = game:GetService("UserInputService")
-
-    local function update(input)
-        local delta = input.Position - dragStart
-        local newPos = UDim2.new(
-            startPos.X.Scale,
-            startPos.X.Offset + delta.X,
-            startPos.Y.Scale,
-            startPos.Y.Offset + delta.Y
-        )
-        bgFrame.Position = newPos
-    end
-
-    bgFrame.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = bgFrame.Position
-            for i, dot in ipairs(dragIndicator:GetChildren()) do
-                if dot:IsA("Frame") then
-                    TweenService:Create(dot, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
-                        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                        BackgroundTransparency = 0
-                    }):Play()
-                end
-            end
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                    for i, dot in ipairs(dragIndicator:GetChildren()) do
-                        if dot:IsA("Frame") then
-                            TweenService:Create(dot, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
-                                BackgroundColor3 = Color3.fromRGB(150, 150, 150),
-                                BackgroundTransparency = 0.3
-                            }):Play()
-                        end
-                    end
-                end
-            end)
-        end
-    end)
-
-    bgFrame.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            dragInput = input
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            update(input)
-        end
-    end)
-
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            if dragging then
-                dragging = false
-                for i, dot in ipairs(dragIndicator:GetChildren()) do
-                    if dot:IsA("Frame") then
-                        TweenService:Create(dot, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
-                            BackgroundColor3 = Color3.fromRGB(150, 150, 150),
-                            BackgroundTransparency = 0.3
-                        }):Play()
-                    end
-                end
-            end
-        end
-    end)
-
-    local layout = Instance.new("UIListLayout", mainFrame)
-    layout.FillDirection = Enum.FillDirection.Horizontal
-    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-    layout.VerticalAlignment = Enum.VerticalAlignment.Center
-    layout.Padding = UDim.new(0, 10)
-
-    local function createButton(emoji, color)
-        local btn = Instance.new("TextButton")
-        btn.Size = UDim2.new(0, 50, 0, 50)
-        btn.BackgroundColor3 = BTN_COLOR
-        btn.BackgroundTransparency = 0.1
-        btn.TextColor3 = TEXT_COLOR
-        btn.Font = Enum.Font.GothamBold
-        btn.TextSize = 24
-        btn.Text = emoji
-        btn.AutoButtonColor = false
-        btn.BorderSizePixel = 0
-        btn.Parent = mainFrame
-        local c = Instance.new("UICorner", btn)
-        c.CornerRadius = UDim.new(1, 0)
-        btn.MouseEnter:Connect(function()
-            TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {
-                BackgroundColor3 = BTN_HOVER,
-                Size = UDim2.new(0, 54, 0, 54)
-            }):Play()
-        end)
-        btn.MouseLeave:Connect(function()
-            TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {
-                BackgroundColor3 = color or BTN_COLOR,
-                Size = UDim2.new(0, 50, 0, 50)
-            }):Play()
-        end)
-        return btn
-    end
-
-    local pauseResumeBtn = createButton("⏸️", BTN_COLOR)
-    local rotateBtn = createButton("🔄", BTN_COLOR)
-    local currentlyPaused = false
-    local tweenTime = 0.25
-    local showScale = 1
-    local hideScale = 0
-
-    local function showUI()
-        bgFrame.Visible = true
-        bgFrame.Size = UDim2.new(0, 130 * hideScale, 0, 70 * hideScale)
-        TweenService:Create(bgFrame, TweenInfo.new(tweenTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-            Size = UDim2.new(0, 130 * showScale, 0, 70 * showScale)
-        }):Play()
-    end
-
-    local function hideUI()
-        TweenService:Create(bgFrame, TweenInfo.new(tweenTime, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
-            Size = UDim2.new(0, 130 * hideScale, 0, 70 * hideScale)
-        }):Play()
-        task.delay(tweenTime, function()
-            bgFrame.Visible = false
-        end)
-    end
-
-    pauseResumeBtn.MouseButton1Click:Connect(function()
-        if not isPlaying then
-            WindUI:Notify({
-                Title = "Auto Walk",
-                Content = "❌ Tidak ada auto walk yang sedang berjalan!",
-                Duration = 3,
-                Icon = "lucide:alert-triangle"
-            })
-            return
-        end
-        if not currentlyPaused then
-            isPaused = true
-            currentlyPaused = true
-            pauseResumeBtn.Text = "▶️"
-            pauseResumeBtn.BackgroundColor3 = SUCCESS_COLOR
-            WindUI:Notify({
-                Title = "Auto Walk",
-                Content = "⏸️ Auto walk dijeda.",
-                Duration = 2,
-                Icon = "lucide:pause"
-            })
-        else
-            isPaused = false
-            currentlyPaused = false
-            pauseResumeBtn.Text = "⏸️"
-            pauseResumeBtn.BackgroundColor3 = BTN_COLOR
-            WindUI:Notify({
-                Title = "Auto Walk",
-                Content = "▶️ Auto walk dilanjutkan.",
-                Duration = 2,
-                Icon = "lucide:play"
-            })
-        end
-    end)
-
-    rotateBtn.MouseButton1Click:Connect(function()
-        if not isPlaying then
-            WindUI:Notify({
-                Title = "Rotate",
-                Content = "❌ Auto walk harus berjalan terlebih dahulu!",
-                Duration = 3,
-                Icon = "lucide:alert-triangle"
-            })
-            return
-        end
-        isFlipped = not isFlipped
-        if isFlipped then
-            rotateBtn.Text = "🔃"
-            rotateBtn.BackgroundColor3 = SUCCESS_COLOR
-            WindUI:Notify({
-                Title = "Rotate",
-                Content = "🔄 Mode rotate AKTIF (jalan mundur)",
-                Duration = 2,
-                Icon = "lucide:rotate-cw"
-            })
-        else
-            rotateBtn.Text = "🔄"
-            rotateBtn.BackgroundColor3 = BTN_COLOR
-            WindUI:Notify({
-                Title = "Rotate",
-                Content = "🔄 Mode rotate NONAKTIF",
-                Duration = 2,
-                Icon = "lucide:rotate-ccw"
-            })
-        end
-    end)
-
-    local function resetUIState()
-        currentlyPaused = false
-        pauseResumeBtn.Text = "⏸️"
-        pauseResumeBtn.BackgroundColor3 = BTN_COLOR
-        isFlipped = false
-        rotateBtn.Text = "🔄"
-        rotateBtn.BackgroundColor3 = BTN_COLOR
-    end
-
-    return {
-        mainFrame = bgFrame,
-        showUI = showUI,
-        hideUI = hideUI,
-        resetUIState = resetUIState
-    }
-end
-
-local pauseRotateUI = createPauseRotateUI()
-
-local originalStopPlayback = stopPlayback
-stopPlayback = function()
-    originalStopPlayback()
-    pauseRotateUI.resetUIState()
-end
-
--------------------------------------------------------------
--- TAB MENU
--------------------------------------------------------------
-local AutoWalkTab = Window:Tab({
-    Title = "Auto Walk",
-    Icon = "lucide:bot"
-})
-
-local AutomaticTab = Window:Tab({
-    Title = "Automatic",
-    Icon = "lucide:zap"
-})
-
-local VisualTab = Window:Tab({
-    Title = "Visual",
-    Icon = "lucide:layers"
-})
-
-local RunAnimationTab = Window:Tab({
-    Title = "Run Animation",
-    Icon = "lucide:person-standing"
-})
-
-local UpdateTab = Window:Tab({
-    Title = "Update Script",
-    Icon = "lucide:file"
-})
-
-local CreditsTab = Window:Tab({
-    Title = "Credits",
-    Icon = "lucide:scroll-text"
-})
-
--------------------------------------------------------------
--- AUTO WALK TAB
--------------------------------------------------------------
-AutoWalkTab:Section({
-    Title = "Auto Walk (Settings)",
-    Icon = "lucide:settings"
-})
-
--- Pause/Rotate Menu Toggle
-local PauseRotateToggle = AutoWalkTab:Toggle({
-    Title = "Pause/Rotate Menu",
-    Desc = "Show/Hide pause and rotate controls",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            pauseRotateUI.showUI()
-        else
-            pauseRotateUI.hideUI()
-        end
-    end,
-})
-
--- Always Sprint Variables
-local normalSpeed = 16
-local sprintSpeed = 24
-local autoShift = false
-
-local function applyAutoShift(character)
-    local humanoid = character:WaitForChild("Humanoid", 5)
-    if humanoid then
-        if autoShift then
-            humanoid.WalkSpeed = sprintSpeed
-        else
-            humanoid.WalkSpeed = normalSpeed
-        end
-    end
-end
-
-player.CharacterAdded:Connect(function(char)
-    char:WaitForChild("Humanoid")
-    task.wait(0.5)
-    if autoShift then
-        applyAutoShift(char)
-    end
-end)
-
--- Always Sprint Toggle
-local AlwaysSprintToggle = AutoWalkTab:Toggle({
-    Title = "Always Sprint",
-    Desc = "Enable automatic sprint mode",
-    Default = false,
-    Callback = function(Value)
-        autoShift = Value
-        if autoShift then
-            WindUI:Notify({
-                Title = "Always Sprint",
-                Content = "Sprint Mode Aktif",
-                Duration = 3,
-                Icon = "lucide:zap"
-            })
-        else
-            WindUI:Notify({
-                Title = "Always Sprint",
-                Content = "Sprint Mode Nonaktif",
-                Duration = 3,
-                Icon = "lucide:zap-off"
-            })
-        end
-        if player.Character then
-            applyAutoShift(player.Character)
-        end
-    end,
-})
-
--- Speed Dropdown
-local speedOptions = {}
-for i = 5, 100 do
-    local speed = i / 10
-    table.insert(speedOptions, {
-        Title = string.format("%.1fx", speed),
-        Icon = "gauge"
-    })
-end
-
-local SpeedDropdown = AutoWalkTab:Dropdown({
-    Title = "⚡ Set Speed",
-    Desc = "Adjust playback speed",
-    Values = speedOptions,
-    Value = {
-        Title = "1.0x",
-        Icon = "gauge"
-    },
-    Callback = function(option)
-        local speed = tonumber(option.Title:match("([%d%.]+)"))
-        if speed then
-            playbackSpeed = speed
-            WindUI:Notify({
-                Title = "Set Speed",
-                Content = "Speed diatur ke " .. option.Title,
-                Duration = 2,
-                Icon = "lucide:gauge"
-            })
-        end
-    end,
-})
-
--- Auto Loop Toggle
-AutoWalkTab:Section({
-    Title = "Auto Loop Settings",
-    Icon = "lucide:repeat"
-})
-
-local AutoLoopToggle = AutoWalkTab:Toggle({
-    Title = "Enable Auto Loop",
-    Desc = "Automatically loop through all checkpoints",
-    Default = false,
-    Callback = function(Value)
-        loopingEnabled = Value
-        if Value then
-            WindUI:Notify({
-                Title = "Auto Loop",
-                Content = "Auto Loop diaktifkan!",
-                Duration = 3,
-                Icon = "lucide:repeat"
-            })
-            -- Start checkpoint detection if auto detect is also enabled
-            if autoDetectEnabled and isPlaying then
-                startCheckpointDetection()
-            end
-        else
-            WindUI:Notify({
-                Title = "Auto Loop",
-                Content = "Auto Loop dinonaktifkan",
-                Duration = 2,
-                Icon = "lucide:repeat-off"
-            })
-            stopCheckpointDetection()
-        end
-    end,
-})
-
-AutoWalkTab:Section({
-    Title = "Auto Walk (Manual)",
-    Icon = "lucide:hand"
-})
-
--- Spawnpoint Toggles
-local SCPToggle1 = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Spawnpoint Route 1)",
-    Desc = "Walk from spawnpoint Route 1",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("spawnpoint_jalur_1.json", 1)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
-
-local SCPToggle2 = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Spawnpoint Route 2)",
-    Desc = "Walk from spawnpoint Route 2",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("spawnpoint_jalur_2.json", 2)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
-
-local SCPToggle3 = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Spawnpoint Route 3)",
-    Desc = "Walk from spawnpoint Route 3",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("spawnpoint_jalur_3.json", 3)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
-
--- Checkpoint Toggles
-local CP1Toggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 1)",
-    Desc = "Walk from checkpoint 1",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("checkpoint_1.json", 4)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
-
-local CP2Toggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 2)",
-    Desc = "Walk from checkpoint 2",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("checkpoint_2.json", 5)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
-
-local CP3Toggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 3)",
-    Desc = "Walk from checkpoint 3",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("checkpoint_3.json", 6)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
-
-local CP4Toggle1 = AutoWalkTab:Toggle({
-    Title = "[ UPD ] Auto Walk (Checkpoint 4 Route 1)",
-    Desc = "Walk from checkpoint 4 Route 1",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("checkpoint_4_jalur_1_new.json", 7)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
-
-local CP4Toggle2 = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 4 Route 2)",
-    Desc = "Walk from checkpoint 4 Route 2",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("checkpoint_4_jalur_2.json", 8)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
-
-local CP5Toggle = AutoWalkTab:Toggle({
-    Title = "Auto Walk (Checkpoint 5)",
-    Desc = "Walk from checkpoint 5",
-    Default = false,
-    Callback = function(Value)
-        if Value then
-            playSingleCheckpointFile("checkpoint_5.json", 9)
-        else
-            autoLoopEnabled = false
-            isManualMode = false
-            stopPlayback()
-        end
-    end,
-})
-
--------------------------------------------------------------
--- AUTOMATIC TAB
--------------------------------------------------------------
-AutomaticTab:Section({
-    Title = "Automatic Detection",
-    Icon = "lucide:radar"
-})
-
--- Auto Detect Checkpoint Toggle
-local AutoDetectToggle = AutomaticTab:Toggle({
-    Title = "Auto Detect Checkpoint During Route",
-    Desc = "Pause replay when checkpoint detected",
-    Default = false,
-    Callback = function(Value)
-        autoDetectEnabled = Value
-        if Value then
-            WindUI:Notify({
-                Title = "Auto Detect",
-                Content = "Auto Detect Checkpoint AKTIF",
-                Duration = 3,
-                Icon = "lucide:radar"
-            })
-            -- Start detection if loop is already running
-            if loopingEnabled and isPlaying then
-                startCheckpointDetection()
-            end
-        else
-            WindUI:Notify({
-                Title = "Auto Detect",
-                Content = "Auto Detect Checkpoint NONAKTIF",
-                Duration = 2,
-                Icon = "lucide:radar-off"
-            })
-            stopCheckpointDetection()
-        end
-    end,
-})
-
--- CP Beam Visual Toggle
-local CPBeamToggle = AutomaticTab:Toggle({
-    Title = "CP Beam Visual",
-    Desc = "Show visual beam line to nearest checkpoint",
-    Default = false,
-    Callback = function(Value)
-        cpBeamEnabled = Value
-        if Value then
-            WindUI:Notify({
-                Title = "CP Beam",
-                Content = "CP Beam Visual AKTIF - Garis akan muncul saat checkpoint terdeteksi",
-                Duration = 3,
-                Icon = "lucide:zap"
-            })
-        else
-            clearBeams()
-            WindUI:Notify({
-                Title = "CP Beam",
-                Content = "CP Beam Visual NONAKTIF",
-                Duration = 2,
-                Icon = "lucide:zap-off"
-            })
-        end
-    end,
-})
-
--- Checkpoint Delay Dropdown
-local delayOptions = {}
-for i = 10, 50 do
-    table.insert(delayOptions, {
-        Title = i .. " seconds",
-        Icon = "timer"
-    })
-end
-
-local DelayDropdown = AutomaticTab:Dropdown({
-    Title = "Delay After Checkpoint",
-    Desc = "Set delay after checkpoint detected",
-    Values = delayOptions,
-    Value = {
-        Title = "10 seconds",
-        Icon = "timer"
-    },
-    Callback = function(option)
-        local delay = tonumber(option.Title:match("(%d+)"))
-        if delay then
-            checkpointDelay = delay
-            WindUI:Notify({
-                Title = "Checkpoint Delay",
-                Content = "Delay diatur ke " .. option.Title,
-                Duration = 2,
-                Icon = "lucide:timer"
-            })
-        end
-    end,
-})
-
--- Detection Distance Dropdown
-local distanceOptions = {}
-for i = 25, 100, 5 do
-    table.insert(distanceOptions, {
-        Title = i .. " studs",
-        Icon = "ruler"
-    })
-end
-
-local DistanceDropdown = AutomaticTab:Dropdown({
-    Title = "Detection Distance (Studs)",
-    Desc = "Set checkpoint detection range",
-    Values = distanceOptions,
-    Value = {
-        Title = "25 studs",
-        Icon = "ruler"
-    },
-    Callback = function(option)
-        local distance = tonumber(option.Title:match("(%d+)"))
-        if distance then
-            detectionDistance = distance
-            WindUI:Notify({
-                Title = "Detection Distance",
-                Content = "Jarak deteksi diatur ke " .. option.Title,
-                Duration = 2,
-                Icon = "lucide:ruler"
-            })
-        end
-    end,
-})
-
--- Keyword Input
-AutomaticTab:Input({
-    Title = "Keyword Basepart Checkpoint",
-    Desc = "Set basepart name keyword for detection",
-    Placeholder = "Checkpoint",
-    Value = "Checkpoint",
-    Callback = function(Value)
-        if Value and Value ~= "" then
-            checkpointKeyword = Value
-            WindUI:Notify({
-                Title = "Checkpoint Keyword",
-                Content = "Keyword diatur ke: " .. Value,
-                Duration = 3,
-                Icon = "lucide:text-cursor"
-            })
-        end
-    end,
-})
-
--------------------------------------------------------------
--- VISUAL TAB
--------------------------------------------------------------
-VisualTab:Section({
-    Title = "Time Menu",
-    Icon = "lucide:clock"
-})
-
-local Lighting = game:GetService("Lighting")
-
--- Time Slider
-local TimeSlider = VisualTab:Slider({
-    Title = "🕒 Time Changer",
-    Desc = "Change game time",
-    Step = 1,
-    Value = {
-        Min = 0,
-        Max = 24,
-        Default = Lighting.ClockTime
-    },
-    Callback = function(Value)
-        Lighting.ClockTime = Value
-        if Value >= 6 and Value < 18 then
-            Lighting.Brightness = 2
-            Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 200)
-        else
-            Lighting.Brightness = 0.5
-            Lighting.OutdoorAmbient = Color3.fromRGB(50, 50, 100)
-        end
-    end,
-})
-
--------------------------------------------------------------
--- RUN ANIMATION TAB
--------------------------------------------------------------
-RunAnimationTab:Section({
-    Title = "Animation Pack List",
-    Icon = "lucide:sparkles"
-})
-
-local RunAnimations = {
-    ["Run Animation 1"] = {
-        Idle1   = "rbxassetid://122257458498464",
-        Idle2   = "rbxassetid://102357151005774",
-        Walk    = "http://www.roblox.com/asset/?id=18537392113",
-        Run     = "rbxassetid://82598234841035",
-        Jump    = "rbxassetid://75290611992385",
-        Fall    = "http://www.roblox.com/asset/?id=11600206437",
-        Climb   = "http://www.roblox.com/asset/?id=10921257536",
-        Swim    = "http://www.roblox.com/asset/?id=10921264784",
-        SwimIdle= "http://www.roblox.com/asset/?id=10921265698"
-    },
-    ["Run Animation 2"] = {
-        Idle1   = "rbxassetid://122257458498464",
-        Idle2   = "rbxassetid://102357151005774",
-        Walk    = "rbxassetid://122150855457006",
-        Run     = "rbxassetid://82598234841035",
-        Jump    = "rbxassetid://75290611992385",
-        Fall    = "rbxassetid://98600215928904",
-        Climb   = "rbxassetid://88763136693023",
-        Swim    = "rbxassetid://133308483266208",
-        SwimIdle= "rbxassetid://109346520324160"
-    },
-    ["Run Animation 3"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=18537376492",
-        Idle2   = "http://www.roblox.com/asset/?id=18537371272",
-        Walk    = "http://www.roblox.com/asset/?id=18537392113",
-        Run     = "http://www.roblox.com/asset/?id=18537384940",
-        Jump    = "http://www.roblox.com/asset/?id=18537380791",
-        Fall    = "http://www.roblox.com/asset/?id=18537367238",
-        Climb   = "http://www.roblox.com/asset/?id=10921271391",
-        Swim    = "http://www.roblox.com/asset/?id=99384245425157",
-        SwimIdle= "http://www.roblox.com/asset/?id=113199415118199"
-    },
-    ["Run Animation 4"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=118832222982049",
-        Idle2   = "http://www.roblox.com/asset/?id=76049494037641",
-        Walk    = "http://www.roblox.com/asset/?id=92072849924640",
-        Run     = "http://www.roblox.com/asset/?id=72301599441680",
-        Jump    = "http://www.roblox.com/asset/?id=104325245285198",
-        Fall    = "http://www.roblox.com/asset/?id=121152442762481",
-        Climb   = "http://www.roblox.com/asset/?id=507765644",
-        Swim    = "http://www.roblox.com/asset/?id=99384245425157",
-        SwimIdle= "http://www.roblox.com/asset/?id=113199415118199"
-    },
-    ["Run Animation 5"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=656117400",
-        Idle2   = "http://www.roblox.com/asset/?id=656118341",
-        Walk    = "http://www.roblox.com/asset/?id=656121766",
-        Run     = "http://www.roblox.com/asset/?id=656118852",
-        Jump    = "http://www.roblox.com/asset/?id=656117878",
-        Fall    = "http://www.roblox.com/asset/?id=656115606",
-        Climb   = "http://www.roblox.com/asset/?id=656114359",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 6"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=616006778",
-        Idle2   = "http://www.roblox.com/asset/?id=616008087",
-        Walk    = "http://www.roblox.com/asset/?id=616013216",
-        Run     = "http://www.roblox.com/asset/?id=616010382",
-        Jump    = "http://www.roblox.com/asset/?id=616008936",
-        Fall    = "http://www.roblox.com/asset/?id=616005863",
-        Climb   = "http://www.roblox.com/asset/?id=616003713",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 7"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=1083195517",
-        Idle2   = "http://www.roblox.com/asset/?id=1083214717",
-        Walk    = "http://www.roblox.com/asset/?id=1083178339",
-        Run     = "http://www.roblox.com/asset/?id=1083216690",
-        Jump    = "http://www.roblox.com/asset/?id=1083218792",
-        Fall    = "http://www.roblox.com/asset/?id=1083189019",
-        Climb   = "http://www.roblox.com/asset/?id=1083182000",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 8"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=616136790",
-        Idle2   = "http://www.roblox.com/asset/?id=616138447",
-        Walk    = "http://www.roblox.com/asset/?id=616146177",
-        Run     = "http://www.roblox.com/asset/?id=616140816",
-        Jump    = "http://www.roblox.com/asset/?id=616139451",
-        Fall    = "http://www.roblox.com/asset/?id=616134815",
-        Climb   = "http://www.roblox.com/asset/?id=616133594",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 9"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=616088211",
-        Idle2   = "http://www.roblox.com/asset/?id=616089559",
-        Walk    = "http://www.roblox.com/asset/?id=616095330",
-        Run     = "http://www.roblox.com/asset/?id=616091570",
-        Jump    = "http://www.roblox.com/asset/?id=616090535",
-        Fall    = "http://www.roblox.com/asset/?id=616087089",
-        Climb   = "http://www.roblox.com/asset/?id=616086039",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 10"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=910004836",
-        Idle2   = "http://www.roblox.com/asset/?id=910009958",
-        Walk    = "http://www.roblox.com/asset/?id=910034870",
-        Run     = "http://www.roblox.com/asset/?id=910025107",
-        Jump    = "http://www.roblox.com/asset/?id=910016857",
-        Fall    = "http://www.roblox.com/asset/?id=910001910",
-        Climb   = "http://www.roblox.com/asset/?id=616086039",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 11"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=742637544",
-        Idle2   = "http://www.roblox.com/asset/?id=742638445",
-        Walk    = "http://www.roblox.com/asset/?id=742640026",
-        Run     = "http://www.roblox.com/asset/?id=742638842",
-        Jump    = "http://www.roblox.com/asset/?id=742637942",
-        Fall    = "http://www.roblox.com/asset/?id=742637151",
-        Climb   = "http://www.roblox.com/asset/?id=742636889",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 12"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=616111295",
-        Idle2   = "http://www.roblox.com/asset/?id=616113536",
-        Walk    = "http://www.roblox.com/asset/?id=616122287",
-        Run     = "http://www.roblox.com/asset/?id=616117076",
-        Jump    = "http://www.roblox.com/asset/?id=616115533",
-        Fall    = "http://www.roblox.com/asset/?id=616108001",
-        Climb   = "http://www.roblox.com/asset/?id=616104706",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 13"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=657595757",
-        Idle2   = "http://www.roblox.com/asset/?id=657568135",
-        Walk    = "http://www.roblox.com/asset/?id=657552124",
-        Run     = "http://www.roblox.com/asset/?id=657564596",
-        Jump    = "http://www.roblox.com/asset/?id=658409194",
-        Fall    = "http://www.roblox.com/asset/?id=657600338",
-        Climb   = "http://www.roblox.com/asset/?id=658360781",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 14"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=616158929",
-        Idle2   = "http://www.roblox.com/asset/?id=616160636",
-        Walk    = "http://www.roblox.com/asset/?id=616168032",
-        Run     = "http://www.roblox.com/asset/?id=616163682",
-        Jump    = "http://www.roblox.com/asset/?id=616161997",
-        Fall    = "http://www.roblox.com/asset/?id=616157476",
-        Climb   = "http://www.roblox.com/asset/?id=616156119",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 15"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=845397899",
-        Idle2   = "http://www.roblox.com/asset/?id=845400520",
-        Walk    = "http://www.roblox.com/asset/?id=845403856",
-        Run     = "http://www.roblox.com/asset/?id=845386501",
-        Jump    = "http://www.roblox.com/asset/?id=845398858",
-        Fall    = "http://www.roblox.com/asset/?id=845396048",
-        Climb   = "http://www.roblox.com/asset/?id=845392038",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 16"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=782841498",
-        Idle2   = "http://www.roblox.com/asset/?id=782845736",
-        Walk    = "http://www.roblox.com/asset/?id=782843345",
-        Run     = "http://www.roblox.com/asset/?id=782842708",
-        Jump    = "http://www.roblox.com/asset/?id=782847020",
-        Fall    = "http://www.roblox.com/asset/?id=782846423",
-        Climb   = "http://www.roblox.com/asset/?id=782843869",
-        Swim    = "http://www.roblox.com/asset/?id=18537389531",
-        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
-    },
-    ["Run Animation 17"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=891621366",
-        Idle2   = "http://www.roblox.com/asset/?id=891633237",
-        Walk    = "http://www.roblox.com/asset/?id=891667138",
-        Run     = "http://www.roblox.com/asset/?id=891636393",
-        Jump    = "http://www.roblox.com/asset/?id=891627522",
-        Fall    = "http://www.roblox.com/asset/?id=891617961",
-        Climb   = "http://www.roblox.com/asset/?id=891609353",
-        Swim    = "http://www.roblox.com/asset/?id=18537389531",
-        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
-    },
-    ["Run Animation 18"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=750781874",
-        Idle2   = "http://www.roblox.com/asset/?id=750782770",
-        Walk    = "http://www.roblox.com/asset/?id=750785693",
-        Run     = "http://www.roblox.com/asset/?id=750783738",
-        Jump    = "http://www.roblox.com/asset/?id=750782230",
-        Fall    = "http://www.roblox.com/asset/?id=750780242",
-        Climb   = "http://www.roblox.com/asset/?id=750779899",
-        Swim    = "http://www.roblox.com/asset/?id=18537389531",
-        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
-    },
-}
-
-local OriginalAnimations = {}
-local CurrentPack = nil
-
-local function SaveOriginalAnimations(Animate)
-    OriginalAnimations = {}
-    for _, child in ipairs(Animate:GetDescendants()) do
-        if child:IsA("Animation") then
-            OriginalAnimations[child] = child.AnimationId
-        end
-    end
-end
-
-local function ApplyAnimations(Animate, Humanoid, AnimPack)
-    Animate.idle.Animation1.AnimationId = AnimPack.Idle1
-    Animate.idle.Animation2.AnimationId = AnimPack.Idle2
-    Animate.walk.WalkAnim.AnimationId   = AnimPack.Walk
-    Animate.run.RunAnim.AnimationId     = AnimPack.Run
-    Animate.jump.JumpAnim.AnimationId   = AnimPack.Jump
-    Animate.fall.FallAnim.AnimationId   = AnimPack.Fall
-    Animate.climb.ClimbAnim.AnimationId = AnimPack.Climb
-    Animate.swim.Swim.AnimationId       = AnimPack.Swim
-    Animate.swimidle.SwimIdle.AnimationId = AnimPack.SwimIdle
-    Humanoid.Jump = true
-end
-
-local function RestoreOriginal()
-    for anim, id in pairs(OriginalAnimations) do
-        if anim and anim:IsA("Animation") then
-            anim.AnimationId = id
-        end
-    end
-end
-
-local function SetupCharacter(Char)
-    local Animate = Char:WaitForChild("Animate")
-    local Humanoid = Char:WaitForChild("Humanoid")
-    SaveOriginalAnimations(Animate)
-    if CurrentPack then
-        ApplyAnimations(Animate, Humanoid, CurrentPack)
-    end
-end
-
-Players.LocalPlayer.CharacterAdded:Connect(function(Char)
-    task.wait(1)
-    SetupCharacter(Char)
-end)
-
-if Players.LocalPlayer.Character then
-    SetupCharacter(Players.LocalPlayer.Character)
-end
-
--- Create toggles for all animation packs
-for i = 1, 18 do
-    local name = "Run Animation " .. i
-    local pack = RunAnimations[name]
-
-    RunAnimationTab:Toggle({
-        Title = name,
-        Desc = "Apply " .. name,
-        Default = false,
-        Callback = function(Value)
-            if Value then
-                CurrentPack = pack
-            elseif CurrentPack == pack then
-                CurrentPack = nil
-                RestoreOriginal()
-            end
-
-            local Char = Players.LocalPlayer.Character
-            if Char and Char:FindFirstChild("Animate") and Char:FindFirstChild("Humanoid") then
-                if CurrentPack then
-                    ApplyAnimations(Char.Animate, Char.Humanoid, CurrentPack)
-                else
-                    RestoreOriginal()
-                end
-            end
-        end,
-    })
-end
-
--------------------------------------------------------------
--- UPDATE SCRIPT TAB
--------------------------------------------------------------
-UpdateTab:Section({
-    Title = "Update Script Menu",
-    Icon = "lucide:refresh-cw"
-})
-
-local updateEnabled = false
-local stopUpdate = {false}
-
--- Create paragraph for file checking status
-local updateStatusParagraph = UpdateTab:Paragraph({
-    Title = "File Status",
-    Desc = "Pengecekan file...",
-})
-
--- Task for checking JSON files during startup
-task.spawn(function()
-    for i, f in ipairs(jsonFiles) do
-        local ok = EnsureJsonFile(f)
-        local status = (ok and "✔ Proses Cek File: " or "❌ Gagal: ") .. f .. " (" .. i .. "/" .. #jsonFiles .. ")"
-        updateStatusParagraph:Set({
-            Title = "File Status",
-            Desc = status,
-        })
-        task.wait(0.5)
-    end
-    updateStatusParagraph:Set({
-        Title = "File Status",
-        Desc = "✔ Semua file aman",
-    })
-end)
-
--- Update Script Toggle
-local UpdateToggle = UpdateTab:Toggle({
-    Title = "Mulai Update Script",
-    Desc = "Download ulang semua file JSON",
-    Default = false,
-    Callback = function(state)
-        if state then
-            updateEnabled = true
-            stopUpdate[1] = false
-            task.spawn(function()
-                updateStatusParagraph:Set({
-                    Title = "Update Status",
-                    Desc = "🔄 Proses update file...",
-                })
-                
-                -- Delete all existing JSON files
-                for _, f in ipairs(jsonFiles) do
-                    local savePath = jsonFolder .. "/" .. f
-                    if isfile(savePath) then
-                        delfile(savePath)
-                    end
-                end
-                
-                -- Re-download all JSON files
-                for i, f in ipairs(jsonFiles) do
-                    if stopUpdate[1] then break end
-                    
-                    WindUI:Notify({
-                        Title = "Update Script",
-                        Content = "Proses Update " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
-                        Duration = 2,
-                        Icon = "lucide:download",
-                    })
-                    
-                    local ok, res = pcall(function() return game:HttpGet(baseURL..f) end)
-                    if ok and res and #res > 0 then
-                        writefile(jsonFolder.."/"..f, res)
-                        updateStatusParagraph:Set({
-                            Title = "Update Status",
-                            Desc = "📥 Proses Update: " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
-                        })
-                    else
-                        WindUI:Notify({
-                            Title = "Update Script",
-                            Content = "❌ Update script gagal untuk " .. f,
-                            Duration = 3,
-                            Icon = "lucide:x-circle",
-                        })
-                        updateStatusParagraph:Set({
-                            Title = "Update Status",
-                            Desc = "❌ Gagal: " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
-                        })
-                    end
-                    task.wait(0.3)
-                end
-                
-                -- Update result notification
-                if not stopUpdate[1] then
-                    WindUI:Notify({
-                        Title = "Update Script",
-                        Content = "Update berhasil!",
-                        Duration = 5,
-                        Icon = "lucide:check-check",
-                    })
-                else
-                    WindUI:Notify({
-                        Title = "Update Script",
-                        Content = "❌ Update dibatalkan",
-                        Duration = 3,
-                        Icon = "lucide:x-circle",
-                    })
-                end
-                
-                -- Re-check all files after updating
-                for i, f in ipairs(jsonFiles) do
-                    local ok = EnsureJsonFile(f)
-                    updateStatusParagraph:Set({
-                        Title = "File Check",
-                        Desc = (ok and "✔ Cek File: " or "❌ Failed: ") .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
-                    })
-                    task.wait(0.3)
-                end
-                updateStatusParagraph:Set({
-                    Title = "File Status",
-                    Desc = "✔ Semua file aman",
-                })
-            end)
-        else
-            updateEnabled = false
-            stopUpdate[1] = true
-        end
-    end,
-})
-
--------------------------------------------------------------
--- CREDITS TAB
--------------------------------------------------------------
-CreditsTab:Section({
-    Title = "User Info",
-    Icon = "lucide:user"
-})
-
--- User Info with Avatar
-CreditsTab:Paragraph({
-    Title = "Player Info",
-    Desc = "Username: " .. player.Name .. "\nDisplay: " .. player.DisplayName .. "\nUserID: " .. player.UserId,
-    Image = avatarUrl
-})
-
-CreditsTab:Section({
-    Title = "Credits List",
-    Icon = "lucide:users"
-})
-
--- UI Credit
-CreditsTab:Paragraph({
-    Title = "UI Library",
-    Desc = "WindUI Interface by .ftgs",
-})
-
--- Developer Credit
-CreditsTab:Paragraph({
-    Title = "Developer",
-    Desc = "Script by Jinho",
-})
-
--- Social Media
-CreditsTab:Section({
-    Title = "Social Media",
-    Icon = "lucide:share-2"
-})
-
--- Telegram Button
-CreditsTab:Button({
-    Title = "Join Telegram",
-    Desc = "Join our Telegram community",
-    Callback = function()
-        if setclipboard then
-            setclipboard("https://t.me/")
-            WindUI:Notify({
-                Title = "Telegram",
-                Content = "Telegram link copied to clipboard!",
-                Duration = 3,
-                Icon = "lucide:message-circle"
-            })
-        else
-            WindUI:Notify({
-                Title = "Error",
-                Content = "Clipboard not supported",
-                Duration = 3,
-                Icon = "lucide:x"
-            })
-        end
-    end
-})
-
--- TikTok
-CreditsTab:Paragraph({
-    Title = "TikTok",
-    Desc = "Follow: @jinho",
-    Buttons = {
-        {
-            Title = "Copy TikTok",
-            Icon = "copy",
-            Callback = function()
-                if setclipboard then
-                    setclipboard("@jinho")
-                    WindUI:Notify({
-                        Title = "Credits",
-                        Content = "TikTok username copied!",
-                        Duration = 3,
-                        Icon = "lucide:check"
-                    })
-                else
-                    WindUI:Notify({
-                        Title = "Error",
-                        Content = "Clipboard not supported",
-                        Duration = 3,
-                        Icon = "lucide:x"
-                    })
-                end
-            end
-        }
-    }
-})
-
--------------------------------------------------------------
--- FINAL NOTIFICATION
--------------------------------------------------------------
-WindUI:Notify({
-    Title = "Script Loaded",
-    Content = "AstrionHUB | Mount Yahayuk v1.0.1 berhasil dimuat!",
-    Duration = 5,
-    Icon = "lucide:check-circle"
-})
-
--- Add version tag
-Window:Tag({
-    Title = "v1.0.1",
-    Color = Color3.fromHex("#30ff6a"),
-    Radius = UDim.new(0, 8),
-})f studs). Maks 100 studs untuk memulai.", distance),
-            Duration = 4,
-            Icon = "lucide:alert-triangle"
-        })
-        return false
-    end
-    
-    WindUI:Notify({
-        Title = "Auto Walk (Manual)",
-        Content = string.format("Menuju titik awal... (%.0f studs)", distance),
-        Duration = 3,
-        Icon = "lucide:footprints"
-    })
-    
-    local humanoidLocal = character:FindFirstChildOfClass("Humanoid")
-    if not humanoidLocal then
-        return false
-    end
-    
-    local reached = false
-    local reachedConnection
-    reachedConnection = humanoidLocal.MoveToFinished:Connect(function(r)
-        reached = r
-        if reachedConnection then
-            reachedConnection:Disconnect()
-            reachedConnection = nil
-        end
-    end)
-    
-    humanoidLocal:MoveTo(startPos)
-    
-    local timeout = 20
-    local waited = 0
-    while not reached and waited < timeout and autoLoopEnabled do
-        task.wait(0.25)
-        waited = waited + 0.25
-    end
-    
-    if reached then
-        WindUI:Notify({
-            Title = "Auto Walk (Manual)",
-            Content = "Sudah sampai titik awal. Memulai playback...",
-            Duration = 2,
-            Icon = "lucide:play"
-        })
-        return true
-    else
-        if reachedConnection then
-            reachedConnection:Disconnect()
-            reachedConnection = nil
-        end
-        return false
-    end
 end
 
 local function startManualAutoWalkSequence(startCheckpoint)
     currentCheckpoint = startCheckpoint - 1
     isManualMode = true
     autoLoopEnabled = true
-    
-    -- Start checkpoint detection if enabled
-    if autoDetectEnabled and loopingEnabled then
-        startCheckpointDetection()
-    end
-    
-    local function playNext()
-        if not autoLoopEnabled then
-            stopCheckpointDetection()
-            return
+    local function walkToStartIfNeeded(data)
+        if not character or not character:FindFirstChild("HumanoidRootPart") then
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Character belum siap (HRP tidak ditemukan).",
+                Duration = 3,
+                Icon = "lucide:ban"
+            })
+            return false
         end
+        local hrp = character.HumanoidRootPart
+        if not data or not data[1] or not data[1].position then
+            return true
+        end
+        local startPos = tableToVec(data[1].position)
+        local distance = (hrp.Position - startPos).Magnitude
+        if distance > 100 then
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = string.format("Terlalu jauh (%.0f studs). Maks 100 studs untuk memulai.", distance),
+                Duration = 4,
+                Icon = "lucide:alert-triangle"
+            })
+            autoLoopEnabled = false
+            isManualMode = false
+            return false
+        end
+        WindUI:Notify({
+            Title = "Auto Walk (Manual)",
+            Content = string.format("Menuju titik awal... (%.0f studs)", distance),
+            Duration = 3,
+            Icon = "lucide:footprints"
+        })
+        local humanoidLocal = character:FindFirstChildOfClass("Humanoid")
+        if not humanoidLocal then
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Humanoid tidak ditemukan, gagal berjalan.",
+                Duration = 3,
+                Icon = "lucide:ban"
+            })
+            autoLoopEnabled = false
+            isManualMode = false
+            return false
+        end
+        local reached = false
+        local reachedConnection
+        reachedConnection = humanoidLocal.MoveToFinished:Connect(function(r)
+            reached = r
+            if reachedConnection then
+                reachedConnection:Disconnect()
+                reachedConnection = nil
+            end
+        end)
+        humanoidLocal:MoveTo(startPos)
+        local timeout = 20
+        local waited = 0
+        while not reached and waited < timeout and autoLoopEnabled do
+            task.wait(0.25)
+            waited = waited + 0.25
+        end
+        if reached then
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Sudah sampai titik awal. Memulai playback...",
+                Duration = 2,
+                Icon = "lucide:play"
+            })
+            return true
+        else
+            if reachedConnection then
+                reachedConnection:Disconnect()
+                reachedConnection = nil
+            end
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Gagal mencapai titik awal (timeout atau dibatalkan).",
+                Duration = 3,
+                Icon = "lucide:ban"
+            })
+            autoLoopEnabled = false
+            isManualMode = false
+            return false
+        end
+    end
+    local function playNext()
+        if not autoLoopEnabled then return end
         currentCheckpoint = currentCheckpoint + 1
         if currentCheckpoint > #jsonFiles then
             if loopingEnabled then
@@ -2092,14 +562,12 @@ local function startManualAutoWalkSequence(startCheckpoint)
                     Duration = 3,
                     Icon = "lucide:repeat"
                 })
-                detectedCheckpoints = {}  -- Reset detected checkpoints for new loop
                 task.wait(1)
                 currentCheckpoint = 0
                 playNext()
             else
                 autoLoopEnabled = false
                 isManualMode = false
-                stopCheckpointDetection()
                 WindUI:Notify({
                     Title = "Auto Walk (Manual)",
                     Content = "Auto walk selesai!",
@@ -2120,25 +588,17 @@ local function startManualAutoWalkSequence(startCheckpoint)
             })
             autoLoopEnabled = false
             isManualMode = false
-            stopCheckpointDetection()
             return
         end
         local data = loadCheckpoint(checkpointFile)
         if data and #data > 0 then
             task.wait(0.5)
-            
-            -- Walk to start if it's the first checkpoint or if looping is enabled
-            if isManualMode and (currentCheckpoint == startCheckpoint or loopingEnabled) then
-                local firstPos = tableToVec(data[1].position)
-                local okWalk = walkToStart(firstPos)
+            if isManualMode and currentCheckpoint == startCheckpoint then
+                local okWalk = walkToStartIfNeeded(data)
                 if not okWalk then
-                    autoLoopEnabled = false
-                    isManualMode = false
-                    stopCheckpointDetection()
                     return
                 end
             end
-            
             startPlayback(data, playNext)
         else
             WindUI:Notify({
@@ -2149,7 +609,6 @@ local function startManualAutoWalkSequence(startCheckpoint)
             })
             autoLoopEnabled = false
             isManualMode = false
-            stopCheckpointDetection()
         end
     end
     playNext()
@@ -2564,19 +1023,750 @@ stopPlayback = function()
 end
 
 -------------------------------------------------------------
+-- TAB MENU
+-------------------------------------------------------------
+local AutoWalkTab = Window:Tab({
+    Title = "Auto Walk",
+    Icon = "lucide:bot"
+})
+
+local VisualTab = Window:Tab({
+    Title = "Visual",
+    Icon = "lucide:layers"
+})
+
+local RunAnimationTab = Window:Tab({
+    Title = "Run Animation",
+    Icon = "lucide:person-standing"
+})
+
+local UpdateTab = Window:Tab({
+    Title = "Update Script",
+    Icon = "lucide:file"
+})
+
+local CreditsTab = Window:Tab({
+    Title = "Credits",
+    Icon = "lucide:scroll-text"
+})
+
+-------------------------------------------------------------
+-- AUTO WALK TAB
+-------------------------------------------------------------
+AutoWalkTab:Section({
+    Title = "Auto Walk (Settings)",
+    Icon = "lucide:settings"
+})
+
+-- Pause/Rotate Menu Toggle
+local PauseRotateToggle = AutoWalkTab:Toggle({
+    Title = "Pause/Rotate Menu",
+    Desc = "Show/Hide pause and rotate controls",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            pauseRotateUI.showUI()
+        else
+            pauseRotateUI.hideUI()
+        end
+    end,
+})
+
+-- Always Sprint Variables
+local normalSpeed = 16
+local sprintSpeed = 24
+local autoShift = false
+
+local function applyAutoShift(character)
+    local humanoid = character:WaitForChild("Humanoid", 5)
+    if humanoid then
+        if autoShift then
+            humanoid.WalkSpeed = sprintSpeed
+        else
+            humanoid.WalkSpeed = normalSpeed
+        end
+    end
+end
+
+player.CharacterAdded:Connect(function(char)
+    char:WaitForChild("Humanoid")
+    task.wait(0.5)
+    if autoShift then
+        applyAutoShift(char)
+    end
+end)
+
+-- Always Sprint Toggle
+local AlwaysSprintToggle = AutoWalkTab:Toggle({
+    Title = "Always Sprint",
+    Desc = "Enable automatic sprint mode",
+    Default = false,
+    Callback = function(Value)
+        autoShift = Value
+        if autoShift then
+            WindUI:Notify({
+                Title = "Always Sprint",
+                Content = "Sprint Mode Aktif ✅",
+                Duration = 3,
+                Icon = "lucide:zap"
+            })
+        else
+            WindUI:Notify({
+                Title = "Always Sprint",
+                Content = "Sprint Mode Nonaktif ❌",
+                Duration = 3,
+                Icon = "lucide:zap-off"
+            })
+        end
+        if player.Character then
+            applyAutoShift(player.Character)
+        end
+    end,
+})
+
+-- Speed Slider
+local SpeedSlider = AutoWalkTab:Slider({
+    Title = "⚡ Set Speed",
+    Desc = "Adjust playback speed",
+    Min = 0.5,
+    Max = 1.2,
+    Default = 1.0,
+    Decimals = 1,
+    Callback = function(Value)
+        playbackSpeed = Value
+        local speedText = "Normal"
+        if Value < 1.0 then
+            speedText = "Lambat (" .. string.format("%.1f", Value) .. "x)"
+        elseif Value > 1.0 then
+            speedText = "Cepat (" .. string.format("%.1f", Value) .. "x)"
+        else
+            speedText = "Normal (" .. Value .. "x)"
+        end
+    end,
+})
+
+AutoWalkTab:Section({
+    Title = "Auto Walk (Manual)",
+    Icon = "lucide:hand"
+})
+
+-- Spawnpoint Toggle
+local SCPToggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Spawnpoint Route 1)",
+    Desc = "Walk from spawnpoint Route 1",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("spawnpoint_jalur_1", 1)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+-- Checkpoint 1 Toggle
+local CP1Toggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Checkpoint 1)",
+    Desc = "Walk from checkpoint 1",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("checkpoint_1.json", 2)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+-- Checkpoint 2 Toggle
+local CP2Toggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Checkpoint 2)",
+    Desc = "Walk from checkpoint 2",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("checkpoint_2.json", 3)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+-- Checkpoint 3 Toggle
+local CP3Toggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Checkpoint 3)",
+    Desc = "Walk from checkpoint 3",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("checkpoint_3.json", 4)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+-- Checkpoint 4 Toggle
+local CP4Toggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Checkpoint 4)",
+    Desc = "Walk from checkpoint 4",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("checkpoint_4.json", 5)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+-- Checkpoint 5 Toggle
+local CP5Toggle = AutoWalkTab:Toggle({
+    Title = "Auto Walk (Checkpoint 5)",
+    Desc = "Walk from checkpoint 5",
+    Default = false,
+    Callback = function(Value)
+        if Value then
+            playSingleCheckpointFile("checkpoint_5.json", 6)
+        else
+            autoLoopEnabled = false
+            isManualMode = false
+            stopPlayback()
+        end
+    end,
+})
+
+-------------------------------------------------------------
+-- VISUAL TAB
+-------------------------------------------------------------
+VisualTab:Section({
+    Title = "Time Menu",
+    Icon = "lucide:clock"
+})
+
+local Lighting = game:GetService("Lighting")
+
+-- Time Slider
+local TimeSlider = VisualTab:Slider({
+    Title = "🕒 Time Changer",
+    Desc = "Change game time",
+    Min = 0,
+    Max = 24,
+    Default = Lighting.ClockTime,
+    Decimals = 0,
+    Callback = function(Value)
+        Lighting.ClockTime = Value
+        if Value >= 6 and Value < 18 then
+            Lighting.Brightness = 2
+            Lighting.OutdoorAmbient = Color3.fromRGB(200, 200, 200)
+        else
+            Lighting.Brightness = 0.5
+            Lighting.OutdoorAmbient = Color3.fromRGB(50, 50, 100)
+        end
+    end,
+})
+
+-------------------------------------------------------------
+-- RUN ANIMATION TAB
+-------------------------------------------------------------
+RunAnimationTab:Section({
+    Title = "Animation Pack List",
+    Icon = "lucide:sparkles"
+})
+
+local RunAnimations = {
+    ["Run Animation 1"] = {
+        Idle1   = "rbxassetid://122257458498464",
+        Idle2   = "rbxassetid://102357151005774",
+        Walk    = "http://www.roblox.com/asset/?id=18537392113",
+        Run     = "rbxassetid://82598234841035",
+        Jump    = "rbxassetid://75290611992385",
+        Fall    = "http://www.roblox.com/asset/?id=11600206437",
+        Climb   = "http://www.roblox.com/asset/?id=10921257536",
+        Swim    = "http://www.roblox.com/asset/?id=10921264784",
+        SwimIdle= "http://www.roblox.com/asset/?id=10921265698"
+    },
+    ["Run Animation 2"] = {
+        Idle1   = "rbxassetid://122257458498464",
+        Idle2   = "rbxassetid://102357151005774",
+        Walk    = "rbxassetid://122150855457006",
+        Run     = "rbxassetid://82598234841035",
+        Jump    = "rbxassetid://75290611992385",
+        Fall    = "rbxassetid://98600215928904",
+        Climb   = "rbxassetid://88763136693023",
+        Swim    = "rbxassetid://133308483266208",
+        SwimIdle= "rbxassetid://109346520324160"
+    },
+    ["Run Animation 3"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=18537376492",
+        Idle2   = "http://www.roblox.com/asset/?id=18537371272",
+        Walk    = "http://www.roblox.com/asset/?id=18537392113",
+        Run     = "http://www.roblox.com/asset/?id=18537384940",
+        Jump    = "http://www.roblox.com/asset/?id=18537380791",
+        Fall    = "http://www.roblox.com/asset/?id=18537367238",
+        Climb   = "http://www.roblox.com/asset/?id=10921271391",
+        Swim    = "http://www.roblox.com/asset/?id=99384245425157",
+        SwimIdle= "http://www.roblox.com/asset/?id=113199415118199"
+    },
+    ["Run Animation 4"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=118832222982049",
+        Idle2   = "http://www.roblox.com/asset/?id=76049494037641",
+        Walk    = "http://www.roblox.com/asset/?id=92072849924640",
+        Run     = "http://www.roblox.com/asset/?id=72301599441680",
+        Jump    = "http://www.roblox.com/asset/?id=104325245285198",
+        Fall    = "http://www.roblox.com/asset/?id=121152442762481",
+        Climb   = "http://www.roblox.com/asset/?id=507765644",
+        Swim    = "http://www.roblox.com/asset/?id=99384245425157",
+        SwimIdle= "http://www.roblox.com/asset/?id=113199415118199"
+    },
+    ["Run Animation 5"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=656117400",
+        Idle2   = "http://www.roblox.com/asset/?id=656118341",
+        Walk    = "http://www.roblox.com/asset/?id=656121766",
+        Run     = "http://www.roblox.com/asset/?id=656118852",
+        Jump    = "http://www.roblox.com/asset/?id=656117878",
+        Fall    = "http://www.roblox.com/asset/?id=656115606",
+        Climb   = "http://www.roblox.com/asset/?id=656114359",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 6"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616006778",
+        Idle2   = "http://www.roblox.com/asset/?id=616008087",
+        Walk    = "http://www.roblox.com/asset/?id=616013216",
+        Run     = "http://www.roblox.com/asset/?id=616010382",
+        Jump    = "http://www.roblox.com/asset/?id=616008936",
+        Fall    = "http://www.roblox.com/asset/?id=616005863",
+        Climb   = "http://www.roblox.com/asset/?id=616003713",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 7"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=1083195517",
+        Idle2   = "http://www.roblox.com/asset/?id=1083214717",
+        Walk    = "http://www.roblox.com/asset/?id=1083178339",
+        Run     = "http://www.roblox.com/asset/?id=1083216690",
+        Jump    = "http://www.roblox.com/asset/?id=1083218792",
+        Fall    = "http://www.roblox.com/asset/?id=1083189019",
+        Climb   = "http://www.roblox.com/asset/?id=1083182000",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 8"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616136790",
+        Idle2   = "http://www.roblox.com/asset/?id=616138447",
+        Walk    = "http://www.roblox.com/asset/?id=616146177",
+        Run     = "http://www.roblox.com/asset/?id=616140816",
+        Jump    = "http://www.roblox.com/asset/?id=616139451",
+        Fall    = "http://www.roblox.com/asset/?id=616134815",
+        Climb   = "http://www.roblox.com/asset/?id=616133594",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 9"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616088211",
+        Idle2   = "http://www.roblox.com/asset/?id=616089559",
+        Walk    = "http://www.roblox.com/asset/?id=616095330",
+        Run     = "http://www.roblox.com/asset/?id=616091570",
+        Jump    = "http://www.roblox.com/asset/?id=616090535",
+        Fall    = "http://www.roblox.com/asset/?id=616087089",
+        Climb   = "http://www.roblox.com/asset/?id=616086039",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 10"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=910004836",
+        Idle2   = "http://www.roblox.com/asset/?id=910009958",
+        Walk    = "http://www.roblox.com/asset/?id=910034870",
+        Run     = "http://www.roblox.com/asset/?id=910025107",
+        Jump    = "http://www.roblox.com/asset/?id=910016857",
+        Fall    = "http://www.roblox.com/asset/?id=910001910",
+        Climb   = "http://www.roblox.com/asset/?id=616086039",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 11"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=742637544",
+        Idle2   = "http://www.roblox.com/asset/?id=742638445",
+        Walk    = "http://www.roblox.com/asset/?id=742640026",
+        Run     = "http://www.roblox.com/asset/?id=742638842",
+        Jump    = "http://www.roblox.com/asset/?id=742637942",
+        Fall    = "http://www.roblox.com/asset/?id=742637151",
+        Climb   = "http://www.roblox.com/asset/?id=742636889",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 12"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616111295",
+        Idle2   = "http://www.roblox.com/asset/?id=616113536",
+        Walk    = "http://www.roblox.com/asset/?id=616122287",
+        Run     = "http://www.roblox.com/asset/?id=616117076",
+        Jump    = "http://www.roblox.com/asset/?id=616115533",
+        Fall    = "http://www.roblox.com/asset/?id=616108001",
+        Climb   = "http://www.roblox.com/asset/?id=616104706",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 13"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=657595757",
+        Idle2   = "http://www.roblox.com/asset/?id=657568135",
+        Walk    = "http://www.roblox.com/asset/?id=657552124",
+        Run     = "http://www.roblox.com/asset/?id=657564596",
+        Jump    = "http://www.roblox.com/asset/?id=658409194",
+        Fall    = "http://www.roblox.com/asset/?id=657600338",
+        Climb   = "http://www.roblox.com/asset/?id=658360781",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 14"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=616158929",
+        Idle2   = "http://www.roblox.com/asset/?id=616160636",
+        Walk    = "http://www.roblox.com/asset/?id=616168032",
+        Run     = "http://www.roblox.com/asset/?id=616163682",
+        Jump    = "http://www.roblox.com/asset/?id=616161997",
+        Fall    = "http://www.roblox.com/asset/?id=616157476",
+        Climb   = "http://www.roblox.com/asset/?id=616156119",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 15"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=845397899",
+        Idle2   = "http://www.roblox.com/asset/?id=845400520",
+        Walk    = "http://www.roblox.com/asset/?id=845403856",
+        Run     = "http://www.roblox.com/asset/?id=845386501",
+        Jump    = "http://www.roblox.com/asset/?id=845398858",
+        Fall    = "http://www.roblox.com/asset/?id=845396048",
+        Climb   = "http://www.roblox.com/asset/?id=845392038",
+        Swim    = "http://www.roblox.com/asset/?id=910028158",
+        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
+    },
+    ["Run Animation 16"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=782841498",
+        Idle2   = "http://www.roblox.com/asset/?id=782845736",
+        Walk    = "http://www.roblox.com/asset/?id=782843345",
+        Run     = "http://www.roblox.com/asset/?id=782842708",
+        Jump    = "http://www.roblox.com/asset/?id=782847020",
+        Fall    = "http://www.roblox.com/asset/?id=782846423",
+        Climb   = "http://www.roblox.com/asset/?id=782843869",
+        Swim    = "http://www.roblox.com/asset/?id=18537389531",
+        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
+    },
+    ["Run Animation 17"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=891621366",
+        Idle2   = "http://www.roblox.com/asset/?id=891633237",
+        Walk    = "http://www.roblox.com/asset/?id=891667138",
+        Run     = "http://www.roblox.com/asset/?id=891636393",
+        Jump    = "http://www.roblox.com/asset/?id=891627522",
+        Fall    = "http://www.roblox.com/asset/?id=891617961",
+        Climb   = "http://www.roblox.com/asset/?id=891609353",
+        Swim    = "http://www.roblox.com/asset/?id=18537389531",
+        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
+    },
+    ["Run Animation 18"] = {
+        Idle1   = "http://www.roblox.com/asset/?id=750781874",
+        Idle2   = "http://www.roblox.com/asset/?id=750782770",
+        Walk    = "http://www.roblox.com/asset/?id=750785693",
+        Run     = "http://www.roblox.com/asset/?id=750783738",
+        Jump    = "http://www.roblox.com/asset/?id=750782230",
+        Fall    = "http://www.roblox.com/asset/?id=750780242",
+        Climb   = "http://www.roblox.com/asset/?id=750779899",
+        Swim    = "http://www.roblox.com/asset/?id=18537389531",
+        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
+    },
+}
+
+local OriginalAnimations = {}
+local CurrentPack = nil
+
+local function SaveOriginalAnimations(Animate)
+    OriginalAnimations = {}
+    for _, child in ipairs(Animate:GetDescendants()) do
+        if child:IsA("Animation") then
+            OriginalAnimations[child] = child.AnimationId
+        end
+    end
+end
+
+local function ApplyAnimations(Animate, Humanoid, AnimPack)
+    Animate.idle.Animation1.AnimationId = AnimPack.Idle1
+    Animate.idle.Animation2.AnimationId = AnimPack.Idle2
+    Animate.walk.WalkAnim.AnimationId   = AnimPack.Walk
+    Animate.run.RunAnim.AnimationId     = AnimPack.Run
+    Animate.jump.JumpAnim.AnimationId   = AnimPack.Jump
+    Animate.fall.FallAnim.AnimationId   = AnimPack.Fall
+    Animate.climb.ClimbAnim.AnimationId = AnimPack.Climb
+    Animate.swim.Swim.AnimationId       = AnimPack.Swim
+    Animate.swimidle.SwimIdle.AnimationId = AnimPack.SwimIdle
+    Humanoid.Jump = true
+end
+
+local function RestoreOriginal()
+    for anim, id in pairs(OriginalAnimations) do
+        if anim and anim:IsA("Animation") then
+            anim.AnimationId = id
+        end
+    end
+end
+
+local function SetupCharacter(Char)
+    local Animate = Char:WaitForChild("Animate")
+    local Humanoid = Char:WaitForChild("Humanoid")
+    SaveOriginalAnimations(Animate)
+    if CurrentPack then
+        ApplyAnimations(Animate, Humanoid, CurrentPack)
+    end
+end
+
+Players.LocalPlayer.CharacterAdded:Connect(function(Char)
+    task.wait(1)
+    SetupCharacter(Char)
+end)
+
+if Players.LocalPlayer.Character then
+    SetupCharacter(Players.LocalPlayer.Character)
+end
+
+-- Create toggles for all animation packs
+for i = 1, 18 do
+    local name = "Run Animation " .. i
+    local pack = RunAnimations[name]
+
+    RunAnimationTab:Toggle({
+        Title = name,
+        Desc = "Apply " .. name,
+        Default = false,
+        Callback = function(Value)
+            if Value then
+                CurrentPack = pack
+            elseif CurrentPack == pack then
+                CurrentPack = nil
+                RestoreOriginal()
+            end
+
+            local Char = Players.LocalPlayer.Character
+            if Char and Char:FindFirstChild("Animate") and Char:FindFirstChild("Humanoid") then
+                if CurrentPack then
+                    ApplyAnimations(Char.Animate, Char.Humanoid, CurrentPack)
+                else
+                    RestoreOriginal()
+                end
+            end
+        end,
+    })
+end
+
+-------------------------------------------------------------
+-- UPDATE SCRIPT TAB
+-------------------------------------------------------------
+UpdateTab:Section({
+    Title = "Update Script Menu",
+    Icon = "lucide:refresh-cw"
+})
+
+local updateEnabled = false
+local stopUpdate = {false}
+
+-- Create label for file checking status
+local updateStatusParagraph = UpdateTab:Paragraph({
+    Title = "File Status",
+    Desc = "Pengecekan file...",
+    Color = "Yellow"
+})
+
+-- Task for checking JSON files during startup
+task.spawn(function()
+    for i, f in ipairs(jsonFiles) do
+        local ok = EnsureJsonFile(f)
+        local status = (ok and "✔ Proses Cek File: " or "❌ Gagal: ") .. " (" .. i .. "/" .. #jsonFiles .. ")"
+        updateStatusParagraph:Set({
+            Title = "File Status",
+            Desc = status,
+            Color = ok and "Green" or "Red"
+        })
+        task.wait(0.5)
+    end
+    updateStatusParagraph:Set({
+        Title = "File Status",
+        Desc = "✔ Semua file aman",
+        Color = "Green"
+    })
+end)
+
+-- Update Script Toggle
+local UpdateToggle = UpdateTab:Toggle({
+    Title = "Mulai Update Script",
+    Desc = "Download ulang semua file JSON",
+    Default = false,
+    Callback = function(state)
+        if state then
+            updateEnabled = true
+            stopUpdate[1] = false
+            task.spawn(function()
+                updateStatusParagraph:Set({
+                    Title = "Update Status",
+                    Desc = "🔄 Proses update file...",
+                    Color = "Yellow"
+                })
+                
+                -- Delete all existing JSON files
+                for _, f in ipairs(jsonFiles) do
+                    local savePath = jsonFolder .. "/" .. f
+                    if isfile(savePath) then
+                        delfile(savePath)
+                    end
+                end
+                
+                -- Re-download all JSON files
+                for i, f in ipairs(jsonFiles) do
+                    if stopUpdate[1] then break end
+                    
+                    WindUI:Notify({
+                        Title = "Update Script",
+                        Content = "Proses Update " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
+                        Duration = 2,
+                        Icon = "lucide:download",
+                    })
+                    
+                    local ok, res = pcall(function() return game:HttpGet(baseURL..f) end)
+                    if ok and res and #res > 0 then
+                        writefile(jsonFolder.."/"..f, res)
+                        updateStatusParagraph:Set({
+                            Title = "Update Status",
+                            Desc = "📥 Proses Update: " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
+                            Color = "Blue"
+                        })
+                    else
+                        WindUI:Notify({
+                            Title = "Update Script",
+                            Content = "❌ Update script gagal untuk " .. f,
+                            Duration = 3,
+                            Icon = "lucide:x-circle",
+                        })
+                        updateStatusParagraph:Set({
+                            Title = "Update Status",
+                            Desc = "❌ Gagal: " .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
+                            Color = "Red"
+                        })
+                    end
+                    task.wait(0.3)
+                end
+                
+                -- Update result notification
+                if not stopUpdate[1] then
+                    WindUI:Notify({
+                        Title = "Update Script",
+                        Content = "Update berhasil!",
+                        Duration = 5,
+                        Icon = "lucide:check-check",
+                    })
+                else
+                    WindUI:Notify({
+                        Title = "Update Script",
+                        Content = "❌ Update dibatalkan",
+                        Duration = 3,
+                        Icon = "lucide:x-circle",
+                    })
+                end
+                
+                -- Re-check all files after updating
+                for i, f in ipairs(jsonFiles) do
+                    local ok = EnsureJsonFile(f)
+                    updateStatusParagraph:Set({
+                        Title = "File Check",
+                        Desc = (ok and "✔ Cek File: " or "❌ Failed: ") .. f .. " (" .. i .. "/" .. #jsonFiles .. ")",
+                        Color = ok and "Green" or "Red"
+                    })
+                    task.wait(0.3)
+                end
+                updateStatusParagraph:Set({
+                    Title = "File Status",
+                    Desc = "✔ Semua file aman",
+                    Color = "Green"
+                })
+            end)
+        else
+            updateEnabled = false
+            stopUpdate[1] = true
+        end
+    end,
+})
+
+-------------------------------------------------------------
+-- CREDITS TAB
+-------------------------------------------------------------
+CreditsTab:Section({
+    Title = "Credits List",
+    Icon = "lucide:users"
+})
+
+-- UI Credit
+CreditsTab:Paragraph({
+    Title = "UI Library",
+    Desc = "WindUI Interface by .ftgs",
+    Color = "Blue"
+})
+
+-- Developer Credit
+CreditsTab:Paragraph({
+    Title = "Developer",
+    Desc = "Script by RullzsyHUB",
+    Color = "Purple"
+})
+
+-- Social Media
+CreditsTab:Paragraph({
+    Title = "Social Media",
+    Desc = "Follow TikTok: @rullzsy99",
+    Color = "Green",
+    Buttons = {
+        {
+            Title = "Copy TikTok",
+            Icon = "lucide:copy",
+            Callback = function()
+                if setclipboard then
+                    setclipboard("@rullzsy99")
+                    WindUI:Notify({
+                        Title = "Credits",
+                        Content = "TikTok username copied!",
+                        Duration = 3,
+                        Icon = "lucide:check"
+                    })
+                else
+                    WindUI:Notify({
+                        Title = "Error",
+                        Content = "Clipboard not supported",
+                        Duration = 3,
+                        Icon = "lucide:x"
+                    })
+                end
+            end
+        }
+    }
+})
+
+-------------------------------------------------------------
 -- FINAL NOTIFICATION
 -------------------------------------------------------------
 WindUI:Notify({
     Title = "Script Loaded",
-    Content = "AstrionHUB | Mount Yahayuk v1.0.1 berhasil dimuat!",
+    Content = "RullzsyHUB | Mount Yahayuk berhasil dimuat!",
     Duration = 5,
     Icon = "lucide:check-circle"
 })
 
 -- Add version tag
 Window:Tag({
-    Title = "v1.0.1",
+    Title = "v1.0.0",
     Color = Color3.fromHex("#30ff6a"),
-    Radius = UDim.new(0, 8),
+    Radius = 8,
 })
-)
