@@ -1,4 +1,3 @@
-
 -------------------------------------------------------------
 -- LOAD LIBRARY UI
 -------------------------------------------------------------
@@ -132,6 +131,8 @@ local detectionDistance = 25
 local checkpointKeyword = "Checkpoint"
 local detectedCheckpoints = {}
 local beamParts = {}
+local checkpointBeamConnection = nil
+local isWaitingAtCheckpoint = false
 
 -------------------------------------------------------------
 -----| AUTO WALK FUNCTIONS |-----
@@ -280,37 +281,55 @@ local function findSurroundingFrames(data, t)
 end
 
 -- Create checkpoint beam visualization
-local function createCheckpointBeam(position)
-    if not cpBeamEnabled then return end
+local function createCheckpointBeam(checkpointPosition)
+    if not cpBeamEnabled or not character or not character:FindFirstChild("HumanoidRootPart") then return end
     
-    local beam = Instance.new("Part")
-    beam.Name = "CheckpointBeam"
-    beam.Anchored = true
-    beam.CanCollide = false
-    beam.Size = Vector3.new(detectionDistance * 2, 50, detectionDistance * 2)
-    beam.Position = position
-    beam.Transparency = 0.7
-    beam.Color = Color3.fromRGB(0, 255, 0)
-    beam.Material = Enum.Material.Neon
-    beam.Parent = workspace
+    local hrp = character.HumanoidRootPart
     
-    table.insert(beamParts, beam)
+    -- Create beam part at checkpoint
+    local beamPart = Instance.new("Part")
+    beamPart.Name = "CheckpointBeam"
+    beamPart.Anchored = true
+    beamPart.CanCollide = false
+    beamPart.Size = Vector3.new(1, 100, 1)
+    beamPart.Position = checkpointPosition
+    beamPart.Transparency = 0.5
+    beamPart.Color = Color3.fromRGB(0, 255, 0)
+    beamPart.Material = Enum.Material.Neon
+    beamPart.Parent = workspace
     
+    -- Create line beam from player to checkpoint
+    local attach0 = Instance.new("Attachment", hrp)
+    local attach1 = Instance.new("Attachment", beamPart)
+    
+    local beam = Instance.new("Beam")
+    beam.Attachment0 = attach0
+    beam.Attachment1 = attach1
+    beam.Width0 = 0.5
+    beam.Width1 = 0.5
+    beam.Color = ColorSequence.new(Color3.fromRGB(0, 255, 0))
+    beam.FaceCamera = true
+    beam.Parent = hrp
+    
+    table.insert(beamParts, {part = beamPart, attachment0 = attach0, attachment1 = attach1, beam = beam})
+    
+    -- Auto remove after 5 seconds
     task.spawn(function()
-        for i = 1, 10 do
-            beam.Transparency = beam.Transparency + 0.03
-            task.wait(0.1)
-        end
+        task.wait(5)
         beam:Destroy()
+        attach0:Destroy()
+        attach1:Destroy()
+        beamPart:Destroy()
     end)
 end
 
 -- Clear all beam parts
 local function clearBeams()
-    for _, beam in ipairs(beamParts) do
-        if beam and beam.Parent then
-            beam:Destroy()
-        end
+    for _, beamData in ipairs(beamParts) do
+        if beamData.beam and beamData.beam.Parent then beamData.beam:Destroy() end
+        if beamData.attachment0 and beamData.attachment0.Parent then beamData.attachment0:Destroy() end
+        if beamData.attachment1 and beamData.attachment1.Parent then beamData.attachment1:Destroy() end
+        if beamData.part and beamData.part.Parent then beamData.part:Destroy() end
     end
     beamParts = {}
 end
@@ -318,24 +337,71 @@ end
 -- Check for nearby checkpoint
 local function checkForCheckpoint()
     if not autoDetectEnabled or not character or not character:FindFirstChild("HumanoidRootPart") then
-        return false
+        return false, nil
     end
     
     local hrp = character.HumanoidRootPart
     local nearbyParts = workspace:GetPartBoundsInRadius(hrp.Position, detectionDistance)
     
     for _, part in ipairs(nearbyParts) do
-        if part:IsA("BasePart") and string.find(part.Name:lower(), checkpointKeyword:lower()) then
+        if part:IsA("BasePart") and string.find(string.lower(part.Name), string.lower(checkpointKeyword)) then
             local partId = part:GetFullName()
             if not detectedCheckpoints[partId] then
                 detectedCheckpoints[partId] = true
-                createCheckpointBeam(part.Position)
-                return true
+                if cpBeamEnabled then
+                    createCheckpointBeam(part.Position)
+                end
+                return true, part
             end
         end
     end
     
-    return false
+    return false, nil
+end
+
+-- Start continuous checkpoint detection
+local function startCheckpointDetection()
+    if checkpointBeamConnection then
+        checkpointBeamConnection:Disconnect()
+    end
+    
+    checkpointBeamConnection = RunService.Heartbeat:Connect(function()
+        if autoDetectEnabled and loopingEnabled and isPlaying and not isWaitingAtCheckpoint then
+            local detected, checkpointPart = checkForCheckpoint()
+            if detected then
+                isWaitingAtCheckpoint = true
+                isPaused = true
+                
+                WindUI:Notify({
+                    Title = "Auto Detect",
+                    Content = "Checkpoint terdeteksi! Menunggu " .. checkpointDelay .. " detik...",
+                    Duration = checkpointDelay,
+                    Icon = "lucide:flag"
+                })
+                
+                task.wait(checkpointDelay)
+                
+                isPaused = false
+                isWaitingAtCheckpoint = false
+                
+                -- Clear this specific checkpoint from detected list after delay
+                if checkpointPart then
+                    detectedCheckpoints[checkpointPart:GetFullName()] = nil
+                end
+            end
+        end
+    end)
+end
+
+-- Stop checkpoint detection
+local function stopCheckpointDetection()
+    if checkpointBeamConnection then
+        checkpointBeamConnection:Disconnect()
+        checkpointBeamConnection = nil
+    end
+    clearBeams()
+    detectedCheckpoints = {}
+    isWaitingAtCheckpoint = false
 end
 
 local function stopPlayback()
@@ -350,6 +416,8 @@ local function stopPlayback()
     isFlipped = false
     currentFlipRotation = CFrame.new()
     detectedCheckpoints = {}
+    isWaitingAtCheckpoint = false
+    stopCheckpointDetection()
     if playbackConnection then
         playbackConnection:Disconnect()
         playbackConnection = nil
@@ -393,20 +461,6 @@ local function startPlayback(data, onComplete)
 
     playbackConnection = RunService.Heartbeat:Connect(function(deltaTime)
         if not isPlaying then return end
-        
-        -- Check for checkpoint detection
-        if autoDetectEnabled and loopingEnabled and checkForCheckpoint() then
-            isPaused = true
-            WindUI:Notify({
-                Title = "Auto Detect",
-                Content = "Checkpoint terdeteksi! Menunggu " .. checkpointDelay .. " detik...",
-                Duration = 3,
-                Icon = "lucide:flag"
-            })
-            task.wait(checkpointDelay)
-            isPaused = false
-            detectedCheckpoints = {}
-        end
         
         if isPaused then
             if pauseStartTime == 0 then
@@ -493,8 +547,19 @@ end
 
 local function startAutoWalkSequence()
     currentCheckpoint = 0
+    autoLoopEnabled = true
+    
+    -- Start checkpoint detection if enabled
+    if autoDetectEnabled and loopingEnabled then
+        startCheckpointDetection()
+    end
+    
     local function playNext()
-        if not autoLoopEnabled then return end
+        if not autoLoopEnabled then
+            stopCheckpointDetection()
+            return
+        end
+        
         currentCheckpoint = currentCheckpoint + 1
         if currentCheckpoint > #jsonFiles then
             if loopingEnabled then
@@ -504,10 +569,12 @@ local function startAutoWalkSequence()
                     Duration = 3,
                     Icon = "lucide:repeat"
                 })
+                detectedCheckpoints = {}  -- Reset detected checkpoints for new loop
                 task.wait(1)
                 startAutoWalkSequence()
             else
                 autoLoopEnabled = false
+                stopCheckpointDetection()
                 WindUI:Notify({
                     Title = "Auto Walk",
                     Content = "Auto walk selesai! Semua checkpoint sudah dilewati.",
@@ -527,13 +594,14 @@ local function startAutoWalkSequence()
                 Icon = "lucide:ban"
             })
             autoLoopEnabled = false
+            stopCheckpointDetection()
             return
         end
         local data = loadCheckpoint(checkpointFile)
         if data and #data > 0 then
             WindUI:Notify({
                 Title = "Auto Walk (Automatic)",
-                Content = "Auto walk berhasil dijalankan",
+                Content = "Checkpoint " .. currentCheckpoint .. " / " .. #jsonFiles,
                 Duration = 2,
                 Icon = "lucide:bot"
             })
@@ -547,6 +615,7 @@ local function startAutoWalkSequence()
                 Icon = "lucide:ban"
             })
             autoLoopEnabled = false
+            stopCheckpointDetection()
         end
     end
     playNext()
@@ -560,179 +629,6 @@ local function walkToStart(startPos)
     local hrp = character.HumanoidRootPart
     local distance = (hrp.Position - startPos).Magnitude
     
-    if distance > 100 then
-        WindUI:Notify({
-            Title = "Auto Walk (Manual)",
-            Content = string.format("Terlalu jauh (%.0f studs). Maks 100 studs untuk memulai.", distance),
-            Duration = 4,
-            Icon = "lucide:alert-triangle"
-        })
-        return false
-    end
-    
-    WindUI:Notify({
-        Title = "Auto Walk (Manual)",
-        Content = string.format("Menuju titik awal... (%.0f studs)", distance),
-        Duration = 3,
-        Icon = "lucide:footprints"
-    })
-    
-    local humanoidLocal = character:FindFirstChildOfClass("Humanoid")
-    if not humanoidLocal then
-        return false
-    end
-    
-    local reached = false
-    local reachedConnection
-    reachedConnection = humanoidLocal.MoveToFinished:Connect(function(r)
-        reached = r
-        if reachedConnection then
-            reachedConnection:Disconnect()
-            reachedConnection = nil
-        end
-    end)
-    
-    humanoidLocal:MoveTo(startPos)
-    
-    local timeout = 20
-    local waited = 0
-    while not reached and waited < timeout and autoLoopEnabled do
-        task.wait(0.25)
-        waited = waited + 0.25
-    end
-    
-    if reached then
-        WindUI:Notify({
-            Title = "Auto Walk (Manual)",
-            Content = "Sudah sampai titik awal. Memulai playback...",
-            Duration = 2,
-            Icon = "lucide:play"
-        })
-        return true
-    else
-        if reachedConnection then
-            reachedConnection:Disconnect()
-            reachedConnection = nil
-        end
-        return false
-    end
-end
-
-local function startManualAutoWalkSequence(startCheckpoint)
-    currentCheckpoint = startCheckpoint - 1
-    isManualMode = true
-    autoLoopEnabled = true
-    
-    local function playNext()
-        if not autoLoopEnabled then return end
-        currentCheckpoint = currentCheckpoint + 1
-        if currentCheckpoint > #jsonFiles then
-            if loopingEnabled then
-                WindUI:Notify({
-                    Title = "Auto Walk (Manual)",
-                    Content = "Semua checkpoint selesai! Looping dari checkpoint 1...",
-                    Duration = 3,
-                    Icon = "lucide:repeat"
-                })
-                task.wait(1)
-                currentCheckpoint = 0
-                playNext()
-            else
-                autoLoopEnabled = false
-                isManualMode = false
-                WindUI:Notify({
-                    Title = "Auto Walk (Manual)",
-                    Content = "Auto walk selesai!",
-                    Duration = 2,
-                    Icon = "lucide:check-check"
-                })
-            end
-            return
-        end
-        local checkpointFile = jsonFiles[currentCheckpoint]
-        local ok, path = EnsureJsonFile(checkpointFile)
-        if not ok then
-            WindUI:Notify({
-                Title = "Error",
-                Content = "Failed to download checkpoint",
-                Duration = 5,
-                Icon = "lucide:ban"
-            })
-            autoLoopEnabled = false
-            isManualMode = false
-            return
-        end
-        local data = loadCheckpoint(checkpointFile)
-        if data and #data > 0 then
-            task.wait(0.5)
-            
-            -- Walk to start if it's the first checkpoint or if looping is enabled
-            if isManualMode and (currentCheckpoint == startCheckpoint or loopingEnabled) then
-                local firstPos = tableToVec(data[1].position)
-                local okWalk = walkToStart(firstPos)
-                if not okWalk then
-                    autoLoopEnabled = false
-                    isManualMode = false
-                    return
-                end
-            end
-            
-            startPlayback(data, playNext)
-        else
-            WindUI:Notify({
-                Title = "Error",
-                Content = "Error loading: " .. checkpointFile,
-                Duration = 5,
-                Icon = "lucide:ban"
-            })
-            autoLoopEnabled = false
-            isManualMode = false
-        end
-    end
-    playNext()
-end
-
-local function playSingleCheckpointFile(fileName, checkpointIndex)
-    if loopingEnabled then
-        stopPlayback()
-        startManualAutoWalkSequence(checkpointIndex)
-        return
-    end
-    autoLoopEnabled = false
-    isManualMode = false
-    stopPlayback()
-    local ok, path = EnsureJsonFile(fileName)
-    if not ok then
-        WindUI:Notify({
-            Title = "Error",
-            Content = "Failed to ensure JSON checkpoint",
-            Duration = 4,
-            Icon = "lucide:ban"
-        })
-        return
-    end
-    local data = loadCheckpoint(fileName)
-    if not data or #data == 0 then
-        WindUI:Notify({
-            Title = "Error",
-            Content = "File invalid / kosong",
-            Duration = 4,
-            Icon = "lucide:ban"
-        })
-        return
-    end
-    local hrp = character:FindFirstChild("HumanoidRootPart")
-    if not hrp then
-        WindUI:Notify({
-            Title = "Error",
-            Content = "HumanoidRootPart tidak ditemukan!",
-            Duration = 4,
-            Icon = "lucide:ban"
-        })
-        return
-    end
-    local startPos = tableToVec(data[1].position)
-    local distance = (hrp.Position - startPos).Magnitude
     if distance > 100 then
         WindUI:Notify({
             Title = "Auto Walk (Manual)",
@@ -1207,7 +1103,7 @@ local AlwaysSprintToggle = AutoWalkTab:Toggle({
     end,
 })
 
--- Speed Dropdown (FIXED)
+-- Speed Dropdown
 local speedOptions = {}
 for i = 5, 100 do
     local speed = i / 10
@@ -1247,7 +1143,7 @@ AutoWalkTab:Section({
 
 local AutoLoopToggle = AutoWalkTab:Toggle({
     Title = "Enable Auto Loop",
-    Desc = "Automatically loop through all checkpoints [ NOT RECOMMENDED ]",
+    Desc = "Automatically loop through all checkpoints",
     Default = false,
     Callback = function(Value)
         loopingEnabled = Value
@@ -1258,6 +1154,10 @@ local AutoLoopToggle = AutoWalkTab:Toggle({
                 Duration = 3,
                 Icon = "lucide:repeat"
             })
+            -- Start checkpoint detection if auto detect is also enabled
+            if autoDetectEnabled and isPlaying then
+                startCheckpointDetection()
+            end
         else
             WindUI:Notify({
                 Title = "Auto Loop",
@@ -1265,6 +1165,7 @@ local AutoLoopToggle = AutoWalkTab:Toggle({
                 Duration = 2,
                 Icon = "lucide:repeat-off"
             })
+            stopCheckpointDetection()
         end
     end,
 })
@@ -1422,7 +1323,7 @@ AutomaticTab:Section({
 -- Auto Detect Checkpoint Toggle
 local AutoDetectToggle = AutomaticTab:Toggle({
     Title = "Auto Detect Checkpoint During Route",
-    Desc = "Pause replay when checkpoint detected [ BUG ]",
+    Desc = "Pause replay when checkpoint detected",
     Default = false,
     Callback = function(Value)
         autoDetectEnabled = Value
@@ -1433,6 +1334,10 @@ local AutoDetectToggle = AutomaticTab:Toggle({
                 Duration = 3,
                 Icon = "lucide:radar"
             })
+            -- Start detection if loop is already running
+            if loopingEnabled and isPlaying then
+                startCheckpointDetection()
+            end
         else
             WindUI:Notify({
                 Title = "Auto Detect",
@@ -1440,6 +1345,7 @@ local AutoDetectToggle = AutomaticTab:Toggle({
                 Duration = 2,
                 Icon = "lucide:radar-off"
             })
+            stopCheckpointDetection()
         end
     end,
 })
@@ -1447,15 +1353,15 @@ local AutoDetectToggle = AutomaticTab:Toggle({
 -- CP Beam Visual Toggle
 local CPBeamToggle = AutomaticTab:Toggle({
     Title = "CP Beam Visual",
-    Desc = "Show visual beam when checkpoint detected [ BUG ]",
+    Desc = "Show visual beam line to nearest checkpoint",
     Default = false,
     Callback = function(Value)
         cpBeamEnabled = Value
         if Value then
             WindUI:Notify({
                 Title = "CP Beam",
-                Content = "CP Beam Visual AKTIF",
-                Duration = 2,
+                Content = "CP Beam Visual AKTIF - Garis akan muncul saat checkpoint terdeteksi",
+                Duration = 3,
                 Icon = "lucide:zap"
             })
         else
@@ -1470,7 +1376,7 @@ local CPBeamToggle = AutomaticTab:Toggle({
     end,
 })
 
--- Checkpoint Delay Dropdown (FIXED)
+-- Checkpoint Delay Dropdown
 local delayOptions = {}
 for i = 10, 50 do
     table.insert(delayOptions, {
@@ -1501,7 +1407,7 @@ local DelayDropdown = AutomaticTab:Dropdown({
     end,
 })
 
--- Detection Distance Dropdown (FIXED)
+-- Detection Distance Dropdown
 local distanceOptions = {}
 for i = 25, 100, 5 do
     table.insert(distanceOptions, {
@@ -1532,7 +1438,7 @@ local DistanceDropdown = AutomaticTab:Dropdown({
     end,
 })
 
--- Keyword Input (FIXED)
+-- Keyword Input
 AutomaticTab:Input({
     Title = "Keyword Basepart Checkpoint",
     Desc = "Set basepart name keyword for detection",
@@ -1561,7 +1467,7 @@ VisualTab:Section({
 
 local Lighting = game:GetService("Lighting")
 
--- Time Slider (FIXED)
+-- Time Slider
 local TimeSlider = VisualTab:Slider({
     Title = "🕒 Time Changer",
     Desc = "Change game time",
@@ -2097,14 +2003,580 @@ CreditsTab:Paragraph({
 -------------------------------------------------------------
 WindUI:Notify({
     Title = "Script Loaded",
-    Content = "AstrionHUB | Mount Yahayuk v1.0.0 berhasil dimuat!",
+    Content = "AstrionHUB | Mount Yahayuk v1.0.1 berhasil dimuat!",
     Duration = 5,
     Icon = "lucide:check-circle"
 })
 
 -- Add version tag
 Window:Tag({
-    Title = "v1.0.0",
+    Title = "v1.0.1",
+    Color = Color3.fromHex("#30ff6a"),
+    Radius = UDim.new(0, 8),
+})f studs). Maks 100 studs untuk memulai.", distance),
+            Duration = 4,
+            Icon = "lucide:alert-triangle"
+        })
+        return false
+    end
+    
+    WindUI:Notify({
+        Title = "Auto Walk (Manual)",
+        Content = string.format("Menuju titik awal... (%.0f studs)", distance),
+        Duration = 3,
+        Icon = "lucide:footprints"
+    })
+    
+    local humanoidLocal = character:FindFirstChildOfClass("Humanoid")
+    if not humanoidLocal then
+        return false
+    end
+    
+    local reached = false
+    local reachedConnection
+    reachedConnection = humanoidLocal.MoveToFinished:Connect(function(r)
+        reached = r
+        if reachedConnection then
+            reachedConnection:Disconnect()
+            reachedConnection = nil
+        end
+    end)
+    
+    humanoidLocal:MoveTo(startPos)
+    
+    local timeout = 20
+    local waited = 0
+    while not reached and waited < timeout and autoLoopEnabled do
+        task.wait(0.25)
+        waited = waited + 0.25
+    end
+    
+    if reached then
+        WindUI:Notify({
+            Title = "Auto Walk (Manual)",
+            Content = "Sudah sampai titik awal. Memulai playback...",
+            Duration = 2,
+            Icon = "lucide:play"
+        })
+        return true
+    else
+        if reachedConnection then
+            reachedConnection:Disconnect()
+            reachedConnection = nil
+        end
+        return false
+    end
+end
+
+local function startManualAutoWalkSequence(startCheckpoint)
+    currentCheckpoint = startCheckpoint - 1
+    isManualMode = true
+    autoLoopEnabled = true
+    
+    -- Start checkpoint detection if enabled
+    if autoDetectEnabled and loopingEnabled then
+        startCheckpointDetection()
+    end
+    
+    local function playNext()
+        if not autoLoopEnabled then
+            stopCheckpointDetection()
+            return
+        end
+        currentCheckpoint = currentCheckpoint + 1
+        if currentCheckpoint > #jsonFiles then
+            if loopingEnabled then
+                WindUI:Notify({
+                    Title = "Auto Walk (Manual)",
+                    Content = "Semua checkpoint selesai! Looping dari checkpoint 1...",
+                    Duration = 3,
+                    Icon = "lucide:repeat"
+                })
+                detectedCheckpoints = {}  -- Reset detected checkpoints for new loop
+                task.wait(1)
+                currentCheckpoint = 0
+                playNext()
+            else
+                autoLoopEnabled = false
+                isManualMode = false
+                stopCheckpointDetection()
+                WindUI:Notify({
+                    Title = "Auto Walk (Manual)",
+                    Content = "Auto walk selesai!",
+                    Duration = 2,
+                    Icon = "lucide:check-check"
+                })
+            end
+            return
+        end
+        local checkpointFile = jsonFiles[currentCheckpoint]
+        local ok, path = EnsureJsonFile(checkpointFile)
+        if not ok then
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Failed to download checkpoint",
+                Duration = 5,
+                Icon = "lucide:ban"
+            })
+            autoLoopEnabled = false
+            isManualMode = false
+            stopCheckpointDetection()
+            return
+        end
+        local data = loadCheckpoint(checkpointFile)
+        if data and #data > 0 then
+            task.wait(0.5)
+            
+            -- Walk to start if it's the first checkpoint or if looping is enabled
+            if isManualMode and (currentCheckpoint == startCheckpoint or loopingEnabled) then
+                local firstPos = tableToVec(data[1].position)
+                local okWalk = walkToStart(firstPos)
+                if not okWalk then
+                    autoLoopEnabled = false
+                    isManualMode = false
+                    stopCheckpointDetection()
+                    return
+                end
+            end
+            
+            startPlayback(data, playNext)
+        else
+            WindUI:Notify({
+                Title = "Error",
+                Content = "Error loading: " .. checkpointFile,
+                Duration = 5,
+                Icon = "lucide:ban"
+            })
+            autoLoopEnabled = false
+            isManualMode = false
+            stopCheckpointDetection()
+        end
+    end
+    playNext()
+end
+
+local function playSingleCheckpointFile(fileName, checkpointIndex)
+    if loopingEnabled then
+        stopPlayback()
+        startManualAutoWalkSequence(checkpointIndex)
+        return
+    end
+    autoLoopEnabled = false
+    isManualMode = false
+    stopPlayback()
+    local ok, path = EnsureJsonFile(fileName)
+    if not ok then
+        WindUI:Notify({
+            Title = "Error",
+            Content = "Failed to ensure JSON checkpoint",
+            Duration = 4,
+            Icon = "lucide:ban"
+        })
+        return
+    end
+    local data = loadCheckpoint(fileName)
+    if not data or #data == 0 then
+        WindUI:Notify({
+            Title = "Error",
+            Content = "File invalid / kosong",
+            Duration = 4,
+            Icon = "lucide:ban"
+        })
+        return
+    end
+    local hrp = character:FindFirstChild("HumanoidRootPart")
+    if not hrp then
+        WindUI:Notify({
+            Title = "Error",
+            Content = "HumanoidRootPart tidak ditemukan!",
+            Duration = 4,
+            Icon = "lucide:ban"
+        })
+        return
+    end
+    local startPos = tableToVec(data[1].position)
+    local distance = (hrp.Position - startPos).Magnitude
+    if distance > 100 then
+        WindUI:Notify({
+            Title = "Auto Walk (Manual)",
+            Content = string.format("Terlalu jauh (%.0f studs)! Harus dalam jarak 100.", distance),
+            Duration = 4,
+            Icon = "lucide:alert-triangle"
+        })
+        return
+    end
+    WindUI:Notify({
+        Title = "Auto Walk (Manual)",
+        Content = string.format("Menuju ke titik awal... (%.0f studs)", distance),
+        Duration = 3,
+        Icon = "lucide:footprints"
+    })
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local moving = true
+    humanoid:MoveTo(startPos)
+    local reachedConnection
+    reachedConnection = humanoid.MoveToFinished:Connect(function(reached)
+        if reached then
+            moving = false
+            reachedConnection:Disconnect()
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Sudah sampai di titik awal, mulai playback...",
+                Duration = 2,
+                Icon = "lucide:play"
+            })
+            task.wait(0.5)
+            startPlayback(data, function()
+                WindUI:Notify({
+                    Title = "Auto Walk (Manual)",
+                    Content = "Auto walk selesai!",
+                    Duration = 2,
+                    Icon = "lucide:check-check"
+                })
+            end)
+        else
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Gagal mencapai titik awal!",
+                Duration = 3,
+                Icon = "lucide:ban"
+            })
+            moving = false
+            reachedConnection:Disconnect()
+        end
+    end)
+    task.spawn(function()
+        local timeout = 20
+        local elapsed = 0
+        while moving and elapsed < timeout do
+            task.wait(1)
+            elapsed += 1
+        end
+        if moving then
+            WindUI:Notify({
+                Title = "Auto Walk (Manual)",
+                Content = "Tidak bisa mencapai titik awal (timeout)!",
+                Duration = 3,
+                Icon = "lucide:ban"
+            })
+            humanoid:Move(Vector3.new(0,0,0))
+            moving = false
+            if reachedConnection then reachedConnection:Disconnect() end
+        end
+    end)
+end
+
+player.CharacterAdded:Connect(function(newChar)
+    character = newChar
+    humanoid = character:WaitForChild("Humanoid")
+    humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+    if isPlaying then stopPlayback() end
+end)
+
+-------------------------------------------------------------
+-- PAUSE/ROTATE UI (MOBILE FRIENDLY & DRAGGABLE)
+-------------------------------------------------------------
+local BTN_COLOR = Color3.fromRGB(38, 38, 38)
+local BTN_HOVER = Color3.fromRGB(55, 55, 55)
+local TEXT_COLOR = Color3.fromRGB(230, 230, 230)
+local WARN_COLOR = Color3.fromRGB(255, 140, 0)
+local SUCCESS_COLOR = Color3.fromRGB(0, 170, 85)
+local ROTATE_COLOR = Color3.fromRGB(100, 100, 255)
+
+local function createPauseRotateUI()
+    local ui = Instance.new("ScreenGui")
+    ui.Name = "PauseRotateUI"
+    ui.IgnoreGuiInset = true
+    ui.ResetOnSpawn = false
+    ui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    ui.Parent = CoreGui
+
+    local bgFrame = Instance.new("Frame")
+    bgFrame.Name = "PR_Background"
+    bgFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    bgFrame.BackgroundTransparency = 0.4
+    bgFrame.BorderSizePixel = 0
+    bgFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    bgFrame.Position = UDim2.new(0.5, 0, 0.85, 0)
+    bgFrame.Size = UDim2.new(0, 130, 0, 70)
+    bgFrame.Visible = false
+    bgFrame.Parent = ui
+
+    local bgCorner = Instance.new("UICorner", bgFrame)
+    bgCorner.CornerRadius = UDim.new(0, 20)
+
+    local dragIndicator = Instance.new("Frame")
+    dragIndicator.Name = "DragIndicator"
+    dragIndicator.BackgroundTransparency = 1
+    dragIndicator.Position = UDim2.new(0.5, 0, 0, 8)
+    dragIndicator.Size = UDim2.new(0, 40, 0, 6)
+    dragIndicator.AnchorPoint = Vector2.new(0.5, 0)
+    dragIndicator.Parent = bgFrame
+
+    local dotLayout = Instance.new("UIListLayout", dragIndicator)
+    dotLayout.FillDirection = Enum.FillDirection.Horizontal
+    dotLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    dotLayout.VerticalAlignment = Enum.VerticalAlignment.Center
+    dotLayout.Padding = UDim.new(0, 6)
+
+    for i = 1, 3 do
+        local dot = Instance.new("Frame")
+        dot.Name = "Dot" .. i
+        dot.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+        dot.BackgroundTransparency = 0.3
+        dot.BorderSizePixel = 0
+        dot.Size = UDim2.new(0, 6, 0, 6)
+        dot.Parent = dragIndicator
+        local dotCorner = Instance.new("UICorner", dot)
+        dotCorner.CornerRadius = UDim.new(1, 0)
+    end
+
+    local mainFrame = Instance.new("Frame")
+    mainFrame.Name = "PR_Main"
+    mainFrame.BackgroundTransparency = 1
+    mainFrame.BorderSizePixel = 0
+    mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+    mainFrame.Position = UDim2.new(0.5, 0, 0.6, 0)
+    mainFrame.Size = UDim2.new(1, -10, 0, 50)
+    mainFrame.Parent = bgFrame
+
+    local dragging = false
+    local dragInput, dragStart, startPos
+    local UserInputService = game:GetService("UserInputService")
+
+    local function update(input)
+        local delta = input.Position - dragStart
+        local newPos = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+        bgFrame.Position = newPos
+    end
+
+    bgFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = bgFrame.Position
+            for i, dot in ipairs(dragIndicator:GetChildren()) do
+                if dot:IsA("Frame") then
+                    TweenService:Create(dot, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+                        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+                        BackgroundTransparency = 0
+                    }):Play()
+                end
+            end
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                    for i, dot in ipairs(dragIndicator:GetChildren()) do
+                        if dot:IsA("Frame") then
+                            TweenService:Create(dot, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+                                BackgroundColor3 = Color3.fromRGB(150, 150, 150),
+                                BackgroundTransparency = 0.3
+                            }):Play()
+                        end
+                    end
+                end
+            end)
+        end
+    end)
+
+    bgFrame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            update(input)
+        end
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if dragging then
+                dragging = false
+                for i, dot in ipairs(dragIndicator:GetChildren()) do
+                    if dot:IsA("Frame") then
+                        TweenService:Create(dot, TweenInfo.new(0.2, Enum.EasingStyle.Quad), {
+                            BackgroundColor3 = Color3.fromRGB(150, 150, 150),
+                            BackgroundTransparency = 0.3
+                        }):Play()
+                    end
+                end
+            end
+        end
+    end)
+
+    local layout = Instance.new("UIListLayout", mainFrame)
+    layout.FillDirection = Enum.FillDirection.Horizontal
+    layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+    layout.VerticalAlignment = Enum.VerticalAlignment.Center
+    layout.Padding = UDim.new(0, 10)
+
+    local function createButton(emoji, color)
+        local btn = Instance.new("TextButton")
+        btn.Size = UDim2.new(0, 50, 0, 50)
+        btn.BackgroundColor3 = BTN_COLOR
+        btn.BackgroundTransparency = 0.1
+        btn.TextColor3 = TEXT_COLOR
+        btn.Font = Enum.Font.GothamBold
+        btn.TextSize = 24
+        btn.Text = emoji
+        btn.AutoButtonColor = false
+        btn.BorderSizePixel = 0
+        btn.Parent = mainFrame
+        local c = Instance.new("UICorner", btn)
+        c.CornerRadius = UDim.new(1, 0)
+        btn.MouseEnter:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {
+                BackgroundColor3 = BTN_HOVER,
+                Size = UDim2.new(0, 54, 0, 54)
+            }):Play()
+        end)
+        btn.MouseLeave:Connect(function()
+            TweenService:Create(btn, TweenInfo.new(0.12, Enum.EasingStyle.Quad), {
+                BackgroundColor3 = color or BTN_COLOR,
+                Size = UDim2.new(0, 50, 0, 50)
+            }):Play()
+        end)
+        return btn
+    end
+
+    local pauseResumeBtn = createButton("⏸️", BTN_COLOR)
+    local rotateBtn = createButton("🔄", BTN_COLOR)
+    local currentlyPaused = false
+    local tweenTime = 0.25
+    local showScale = 1
+    local hideScale = 0
+
+    local function showUI()
+        bgFrame.Visible = true
+        bgFrame.Size = UDim2.new(0, 130 * hideScale, 0, 70 * hideScale)
+        TweenService:Create(bgFrame, TweenInfo.new(tweenTime, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+            Size = UDim2.new(0, 130 * showScale, 0, 70 * showScale)
+        }):Play()
+    end
+
+    local function hideUI()
+        TweenService:Create(bgFrame, TweenInfo.new(tweenTime, Enum.EasingStyle.Back, Enum.EasingDirection.In), {
+            Size = UDim2.new(0, 130 * hideScale, 0, 70 * hideScale)
+        }):Play()
+        task.delay(tweenTime, function()
+            bgFrame.Visible = false
+        end)
+    end
+
+    pauseResumeBtn.MouseButton1Click:Connect(function()
+        if not isPlaying then
+            WindUI:Notify({
+                Title = "Auto Walk",
+                Content = "❌ Tidak ada auto walk yang sedang berjalan!",
+                Duration = 3,
+                Icon = "lucide:alert-triangle"
+            })
+            return
+        end
+        if not currentlyPaused then
+            isPaused = true
+            currentlyPaused = true
+            pauseResumeBtn.Text = "▶️"
+            pauseResumeBtn.BackgroundColor3 = SUCCESS_COLOR
+            WindUI:Notify({
+                Title = "Auto Walk",
+                Content = "⏸️ Auto walk dijeda.",
+                Duration = 2,
+                Icon = "lucide:pause"
+            })
+        else
+            isPaused = false
+            currentlyPaused = false
+            pauseResumeBtn.Text = "⏸️"
+            pauseResumeBtn.BackgroundColor3 = BTN_COLOR
+            WindUI:Notify({
+                Title = "Auto Walk",
+                Content = "▶️ Auto walk dilanjutkan.",
+                Duration = 2,
+                Icon = "lucide:play"
+            })
+        end
+    end)
+
+    rotateBtn.MouseButton1Click:Connect(function()
+        if not isPlaying then
+            WindUI:Notify({
+                Title = "Rotate",
+                Content = "❌ Auto walk harus berjalan terlebih dahulu!",
+                Duration = 3,
+                Icon = "lucide:alert-triangle"
+            })
+            return
+        end
+        isFlipped = not isFlipped
+        if isFlipped then
+            rotateBtn.Text = "🔃"
+            rotateBtn.BackgroundColor3 = SUCCESS_COLOR
+            WindUI:Notify({
+                Title = "Rotate",
+                Content = "🔄 Mode rotate AKTIF (jalan mundur)",
+                Duration = 2,
+                Icon = "lucide:rotate-cw"
+            })
+        else
+            rotateBtn.Text = "🔄"
+            rotateBtn.BackgroundColor3 = BTN_COLOR
+            WindUI:Notify({
+                Title = "Rotate",
+                Content = "🔄 Mode rotate NONAKTIF",
+                Duration = 2,
+                Icon = "lucide:rotate-ccw"
+            })
+        end
+    end)
+
+    local function resetUIState()
+        currentlyPaused = false
+        pauseResumeBtn.Text = "⏸️"
+        pauseResumeBtn.BackgroundColor3 = BTN_COLOR
+        isFlipped = false
+        rotateBtn.Text = "🔄"
+        rotateBtn.BackgroundColor3 = BTN_COLOR
+    end
+
+    return {
+        mainFrame = bgFrame,
+        showUI = showUI,
+        hideUI = hideUI,
+        resetUIState = resetUIState
+    }
+end
+
+local pauseRotateUI = createPauseRotateUI()
+
+local originalStopPlayback = stopPlayback
+stopPlayback = function()
+    originalStopPlayback()
+    pauseRotateUI.resetUIState()
+end
+
+-------------------------------------------------------------
+-- FINAL NOTIFICATION
+-------------------------------------------------------------
+WindUI:Notify({
+    Title = "Script Loaded",
+    Content = "AstrionHUB | Mount Yahayuk v1.0.1 berhasil dimuat!",
+    Duration = 5,
+    Icon = "lucide:check-circle"
+})
+
+-- Add version tag
+Window:Tag({
+    Title = "v1.0.1",
     Color = Color3.fromHex("#30ff6a"),
     Radius = UDim.new(0, 8),
 })
+)
