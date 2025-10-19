@@ -111,7 +111,7 @@ end
 
 -- daftar link raw route (ubah ke link punyamu)
 routes = {
-    {"BASE → CP8", loadRoute("https://raw.githubusercontent.com/yrejinhoo/Replays/refs/heads/main/YHY/ReplayBubble_9620960155_76964310785698.json")},
+    {"BASE → CP8", loadRoute("https://raw.githubusercontent.com/yrejinhoo/Replays/refs/heads/main/YHY/yahayuk.lua")},
 }
 
 -- ============================================================
