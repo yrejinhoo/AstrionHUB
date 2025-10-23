@@ -30,7 +30,7 @@ local CONFIG = {
     MAPS_REPO_URL = "https://raw.githubusercontent.com/syannnho/MAPS/refs/heads/main/",
     KEY_API_URL = "https://astrion-keycrate.vercel.app/",
     PREMIUM_URL = "https://raw.githubusercontent.com/syannnho/premium/main/users.json",
-    DISCORD_WEBHOOK = "YOUR_DISCORD_WEBHOOK_URL_HERE", -- Ganti dengan webhook Discord Anda
+    DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1430745972807565434/e0vBGL77hK5KnhvmmyithguMjEb9ThMQ2uTrj-3tU8y_Sop0F9anENJlFi314fwFdyKb", -- Ganti dengan webhook Discord Anda
     FOLDER_NAME = "AstrionHUB_Data"
 }
 
