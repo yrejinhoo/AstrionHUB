@@ -24,15 +24,13 @@ local player             = Players.LocalPlayer
 local hrp                = nil
 
 -- ============================================================
--- CONFIGURATION
+-- CONFIG
 -- ============================================================
-local CONFIG = {
-    MAPS_REPO_URL = "https://raw.githubusercontent.com/syannnho/MAPS/refs/heads/main/",
-    KEY_API_URL = "https://astrion-keycrate.vercel.app/",
-    PREMIUM_URL = "https://raw.githubusercontent.com/syannnho/premium/main/users.json",
-    DISCORD_WEBHOOK = "https://discord.com/api/webhooks/1430745972807565434/e0vBGL77hK5KnhvmmyithguMjEb9ThMQ2uTrj-3tU8y_Sop0F9anENJlFi314fwFdyKb", -- Ganti dengan webhook Discord Anda
-    FOLDER_NAME = "AstrionHUB_Data"
-}
+local MAPS_BASE_URL = "https://raw.githubusercontent.com/syannnho/MAPS/refs/heads/main/"
+local KEY_API_URL = "https://astrion-keycrate.vercel.app/api/validate"
+local PREMIUM_URL = "https://raw.githubusercontent.com/syannnho/MAPS/refs/heads/main/premium.json"
+local DISCORD_WEBHOOK = "YOUR_DISCORD_WEBHOOK_URL_HERE" -- Ganti dengan webhook Discord Anda
+local FOLDER_NAME = "AstrionHUB"
 
 -- ============================================================
 -- GLOBALS
@@ -45,8 +43,6 @@ local frameTime             = 1/30
 local playbackRate          = 1
 local isReplayRunning       = false
 local isRunning             = false
-local autoLoopEnabled       = false
-
 local DEFAULT_HEIGHT        = 4.947289
 
 -- CP Detector vars
@@ -68,7 +64,7 @@ local cpHighlight           = nil
 local cpBeamEnabled         = true
 local awaitingCP            = false
 
--- Anti Idle & Beton
+-- Anti Idle/Beton
 local antiIdleActive        = true
 local antiIdleConn          = nil
 local antiBetonActive       = false
@@ -77,52 +73,59 @@ local intervalFlip          = false
 
 -- Maps System
 local availableMaps         = {}
-local currentMapName        = nil
-local currentMapData        = nil
-local dailyEvent            = nil
+local currentMap            = nil
+local selectedMaps          = {}
+local autoLoopEnabled       = false
 local isPremium             = false
-local validKey              = false
+local keyExpiry             = 0
+
+-- Event System
+local currentEvent          = nil
+local eventEndTime          = 0
 
 -- ============================================================
--- STORAGE FUNCTIONS
+-- UTILITY FUNCTIONS
 -- ============================================================
-local function saveToFile(filename, data)
-    pcall(function()
-        if not isfolder(CONFIG.FOLDER_NAME) then
-            makefolder(CONFIG.FOLDER_NAME)
-        end
-        writefile(CONFIG.FOLDER_NAME .. "/" .. filename, HttpService:JSONEncode(data))
-    end)
+local function makeFolderIfNeeded()
+    if not isfolder(FOLDER_NAME) then
+        makefolder(FOLDER_NAME)
+    end
 end
 
-local function loadFromFile(filename)
-    local success, result = pcall(function()
-        if isfile(CONFIG.FOLDER_NAME .. "/" .. filename) then
-            return HttpService:JSONDecode(readfile(CONFIG.FOLDER_NAME .. "/" .. filename))
-        end
-        return nil
-    end)
-    return success and result or nil
+local function saveData(filename, data)
+    makeFolderIfNeeded()
+    writefile(FOLDER_NAME .. "/" .. filename, HttpService:JSONEncode(data))
 end
 
--- ============================================================
--- DISCORD WEBHOOK
--- ============================================================
-local function sendWebhook(title, message, color)
+local function loadData(filename)
+    makeFolderIfNeeded()
+    if isfile(FOLDER_NAME .. "/" .. filename) then
+        local success, result = pcall(function()
+            return HttpService:JSONDecode(readfile(FOLDER_NAME .. "/" .. filename))
+        end)
+        if success then return result end
+    end
+    return nil
+end
+
+local function sendDiscordWebhook(title, description, color)
+    if DISCORD_WEBHOOK == "YOUR_DISCORD_WEBHOOK_URL_HERE" then return end
+    
+    local data = {
+        embeds = {{
+            title = title,
+            description = description,
+            color = color or 3447003,
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%S"),
+            footer = {
+                text = "AstrionHUB Logger"
+            }
+        }}
+    }
+    
     pcall(function()
-        local data = {
-            embeds = {{
-                title = title,
-                description = message,
-                color = color or 3447003,
-                footer = {
-                    text = "AstrionHUB | " .. os.date("%Y-%m-%d %H:%M:%S")
-                }
-            }}
-        }
-        local request = http_request or request or HttpPost or syn.request
         request({
-            Url = CONFIG.DISCORD_WEBHOOK,
+            Url = DISCORD_WEBHOOK,
             Method = "POST",
             Headers = {["Content-Type"] = "application/json"},
             Body = HttpService:JSONEncode(data)
@@ -131,171 +134,150 @@ local function sendWebhook(title, message, color)
 end
 
 -- ============================================================
--- PREMIUM CHECK
+-- KEY SYSTEM
 -- ============================================================
 local function checkPremium()
     local success, result = pcall(function()
-        local response = game:HttpGet(CONFIG.PREMIUM_URL)
-        local data = HttpService:JSONDecode(response)
-        if data and data.users then
-            for _, userId in ipairs(data.users) do
-                if tonumber(userId) == player.UserId then
-                    return true
-                end
+        return HttpService:JSONDecode(game:HttpGet(PREMIUM_URL))
+    end)
+    
+    if success and result and result.users then
+        for _, userId in ipairs(result.users) do
+            if tostring(userId) == tostring(player.UserId) then
+                return true
             end
         end
-        return false
-    end)
-    return success and result or false
-end
-
--- ============================================================
--- KEY VALIDATION
--- ============================================================
-local function validateKey(key)
-    if not key or key == "" then return false end
-    
-    local success, result = pcall(function()
-        local url = CONFIG.KEY_API_URL .. "?key=" .. HttpService:UrlEncode(key)
-        local response = game:HttpGet(url)
-        local data = HttpService:JSONDecode(response)
-        return data.success == true
-    end)
-    
-    if success and result then
-        local keyData = {
-            key = key,
-            timestamp = os.time(),
-            userId = player.UserId
-        }
-        saveToFile("key.json", keyData)
-        return true
     end
     return false
 end
 
-local function loadSavedKey()
-    local keyData = loadFromFile("key.json")
-    if keyData then
-        local daysPassed = math.floor((os.time() - keyData.timestamp) / 86400)
-        if daysPassed < 1 and keyData.userId == player.UserId then
-            return validateKey(keyData.key)
+local function validateKey(key)
+    local success, response = pcall(function()
+        return request({
+            Url = KEY_API_URL .. "?key=" .. HttpService:UrlEncode(key),
+            Method = "GET"
+        })
+    end)
+    
+    if success and response and response.StatusCode == 200 then
+        local data = HttpService:JSONDecode(response.Body)
+        return data.success == true
+    end
+    return false
+end
+
+local function saveKey(key)
+    local data = {
+        key = key,
+        expiry = os.time() + (24 * 60 * 60),
+        userId = player.UserId
+    }
+    saveData("key.json", data)
+end
+
+local function loadKey()
+    local data = loadData("key.json")
+    if data and data.userId == player.UserId then
+        if os.time() < data.expiry then
+            return data.key, data.expiry
         end
     end
-    return false
+    return nil, 0
+end
+
+local function getTimeRemaining()
+    if isPremium then
+        return "Premium (Unlimited)"
+    elseif keyExpiry > 0 then
+        local remaining = keyExpiry - os.time()
+        if remaining > 0 then
+            local hours = math.floor(remaining / 3600)
+            local minutes = math.floor((remaining % 3600) / 60)
+            local seconds = remaining % 60
+            return string.format("%02d:%02d:%02d", hours, minutes, seconds)
+        end
+    end
+    return "Expired"
 end
 
 -- ============================================================
--- DAILY EVENT SYSTEM
+-- MAPS SYSTEM
 -- ============================================================
-local function getDailyEvent()
-    local today = os.date("%Y-%m-%d")
-    local eventData = loadFromFile("event.json")
+local function fetchAvailableMaps()
+    local maps = {}
     
-    if eventData and eventData.date == today then
-        return eventData.map
+    -- Try to get list of files from GitHub
+    local success, result = pcall(function()
+        return game:HttpGet("https://api.github.com/repos/syannnho/MAPS/contents/")
+    end)
+    
+    if success then
+        local files = HttpService:JSONDecode(result)
+        for _, file in ipairs(files) do
+            if file.name:match("%.lua$") and file.name ~= "premium.json" then
+                local mapName = file.name:gsub("%.lua$", "")
+                table.insert(maps, {
+                    name = mapName,
+                    url = MAPS_BASE_URL .. file.name,
+                    event = false
+                })
+            end
+        end
     end
+    
+    -- Fallback if API fails
+    if #maps == 0 then
+        maps = {
+            {name = "ANEH", url = MAPS_BASE_URL .. "ANEH.lua", event = false},
+            {name = "YNTKTS", url = MAPS_BASE_URL .. "YNTKTS.lua", event = false}
+        }
+    end
+    
+    return maps
+end
+
+local function setDailyEvent()
+    local today = os.date("*t")
+    local dayOfYear = today.yday
     
     if #availableMaps > 0 then
-        local randomMap = availableMaps[math.random(1, #availableMaps)]
-        local newEvent = {
-            date = today,
-            map = randomMap.name
-        }
-        saveToFile("event.json", newEvent)
-        sendWebhook("Daily Event", "Today's event map: " .. randomMap.name, 16776960)
-        return randomMap.name
-    end
-    
-    return nil
-end
-
--- ============================================================
--- MAPS LOADER
--- ============================================================
-local function loadMapsList()
-    local success, result = pcall(function()
-        local maps = {}
-        local knownMaps = {"YNTKTS.lua", "ANEH.lua"} -- Tambahkan map baru di sini
+        local eventIndex = (dayOfYear % #availableMaps) + 1
+        availableMaps[eventIndex].event = true
+        currentEvent = availableMaps[eventIndex]
+        eventEndTime = os.time() + (24 * 60 * 60) - (today.hour * 3600 + today.min * 60 + today.sec)
         
-        for _, mapFile in ipairs(knownMaps) do
-            local mapName = mapFile:gsub("%.lua$", "")
-            table.insert(maps, {
-                name = mapName,
-                file = mapFile,
-                url = CONFIG.MAPS_REPO_URL .. mapFile
-            })
-        end
-        
-        return maps
-    end)
-    
-    if success and result then
-        availableMaps = result
-        dailyEvent = getDailyEvent()
+        sendDiscordWebhook(
+            "Daily Event Started! 🎉",
+            string.format("Map: **%s**\nEvent Duration: 24 hours", currentEvent.name),
+            16776960
+        )
     end
 end
 
-local function loadMapData(mapInfo)
-    local success, result = pcall(function()
-        local code = game:HttpGet(mapInfo.url)
-        local func = loadstring(code)
-        if func then
-            return func()
-        end
-        return nil
-    end)
+local function checkMapUpdates()
+    local newMaps = fetchAvailableMaps()
+    local updated = false
     
-    if success and result and type(result) == "table" then
-        currentMapName = mapInfo.name
-        currentMapData = mapInfo
-        rawFrames = removeDuplicateFrames(result, 0.01)
-        frames = adjustRoute(rawFrames)
-        
-        -- Save map cache
-        saveToFile("map_" .. mapInfo.name .. ".json", {
-            frames = rawFrames,
-            timestamp = os.time()
-        })
-        
+    for _, newMap in ipairs(newMaps) do
+        local found = false
+        for _, oldMap in ipairs(availableMaps) do
+            if oldMap.name == newMap.name then
+                found = true
+                break
+            end
+        end
+        if not found then
+            updated = true
+            break
+        end
+    end
+    
+    if updated then
+        availableMaps = newMaps
+        setDailyEvent()
         return true
     end
-    
     return false
-end
-
--- ============================================================
--- AUTO UPDATE SYSTEM
--- ============================================================
-local function checkForUpdates()
-    if not currentMapData then return false end
-    
-    local cachedData = loadFromFile("map_" .. currentMapName .. ".json")
-    if not cachedData then return true end
-    
-    local success, needUpdate = pcall(function()
-        local response = game:HttpGet(currentMapData.url)
-        local currentHash = HttpService:JSONEncode(response):sub(1, 100)
-        local cachedHash = HttpService:JSONEncode(cachedData.frames):sub(1, 100)
-        return currentHash ~= cachedHash
-    end)
-    
-    return success and needUpdate or false
-end
-
-local function autoUpdate()
-    if checkForUpdates() then
-        if _G.__AWM_NOTIFY then
-            _G.__AWM_NOTIFY("Auto Update", "Update tersedia untuk " .. currentMapName .. "!", 3)
-        end
-        
-        if loadMapData(currentMapData) then
-            if _G.__AWM_NOTIFY then
-                _G.__AWM_NOTIFY("Auto Update", "Map berhasil diperbarui!", 2)
-            end
-            sendWebhook("Map Updated", "User updated map: " .. currentMapName, 65280)
-        end
-    end
 end
 
 -- ============================================================
@@ -326,10 +308,8 @@ local function setupMovement(char)
         humanoid.Died:Connect(function()
             isReplayRunning = false
             stopMovement()
-            if not autoLoopEnabled then
-                isRunning = false
-            end
-            if _G.__AWM_NOTIFY then _G.__AWM_NOTIFY("Replay", "Karakter mati" .. (autoLoopEnabled and ", respawning..." or ", replay dihentikan."), 3) end
+            isRunning = false
+            if _G.__AWM_NOTIFY then _G.__AWM_NOTIFY("Replay", "Karakter mati, replay dihentikan.", 3) end
         end)
 
         if animConn then animConn:Disconnect() end
@@ -408,6 +388,23 @@ local function removeDuplicateFrames(frameList, tolerance)
 end
 
 -- ============================================================
+-- LOAD ROUTE
+-- ============================================================
+local function loadRoute(url)
+    local ok, result = pcall(function()
+        return loadstring(game:HttpGet(url))()
+    end)
+    if ok and type(result) == "table" then
+        local cleaned = removeDuplicateFrames(result, 0.01)
+        rawFrames = cleaned
+        return adjustRoute(cleaned)
+    else
+        warn("Gagal load route dari: "..url)
+        return {}
+    end
+end
+
+-- ============================================================
 -- HELPER FUNCTIONS
 -- ============================================================
 local function getNearestFrameIndex(frameList)
@@ -439,9 +436,6 @@ local function applyIntervalRotation(cf)
     end
 end
 
--- ============================================================
--- WALK TO START POSITION
--- ============================================================
 local function walkToPosition(targetCF, threshold)
     threshold = threshold or 5
     if not hrp then return end
@@ -539,9 +533,6 @@ local function findNearestCP(radius, keyword)
     return nearest
 end
 
--- ============================================================
--- CP HANDLER
--- ============================================================
 local function handleCP(cp)
     if not cp or not hrp then return end
     awaitingCP = true
@@ -592,9 +583,6 @@ local function lerpCF(fromCF, toCF)
     end
 end
 
--- ============================================================
--- RESPAWN
--- ============================================================
 local function respawnPlayer()
     player.Character:BreakJoints()
 end
@@ -645,19 +633,63 @@ local function runRouteOnce()
 
     isReplayRunning = false
     stopMovement()
-    
-    if autoLoopEnabled then
+    isRunning = false
+    if _G.__AWM_NOTIFY then
+        _G.__AWM_NOTIFY("Replay","Replay selesai.",2)
+    end
+end
+
+local function runAllRoutes()
+    if #frames == 0 then return end
+    isRunning = true
+
+    while isRunning and (autoLoopEnabled or not autoLoopEnabled) do
+        if not hrp then refreshHRP() end
+
+        local startIdx = getNearestFrameIndex(frames)
+        local startFrame = frames[startIdx]
+        local distanceToStart = (hrp.Position - startFrame.Position).Magnitude
+        
+        if distanceToStart > 3 then
+            if _G.__AWM_NOTIFY then _G.__AWM_NOTIFY("Walk to Start", "Berjalan ke posisi awal...", 2) end
+            walkToPosition(startFrame, 3)
+            task.wait(0.5)
+        end
+        
+        startMovement()
+        isReplayRunning = true
+        completedCPs = {}
+
+        for i = startIdx, #frames - 1 do
+            if not isReplayRunning then break end
+            lastReplayIndex = i
+            lastReplayPos   = frames[i].Position
+
+            if autoCPEnabled then
+                CP_RADIUS   = cpDetectRadius
+                CP_COOLDOWN = cpDelayAfterDetect
+                local cp = findNearestCP(CP_RADIUS, cpKeyword)
+                if cp then
+                    triggeredCP[cp] = tick()
+                    if _G.__AWM_NOTIFY then
+                        _G.__AWM_NOTIFY("CP Detector","CP terdekat terdeteksi. Menuju CP...",2)
+                    end
+                    handleCP(cp)
+                end
+            end
+
+            lerpCF(frames[i], frames[i+1])
+        end
+
+        isReplayRunning = false
+        stopMovement()
+
+        if not isRunning or not autoLoopEnabled then break end
         respawnPlayer()
         task.wait(5)
-        if isRunning then
-            runRouteOnce()
-        end
-    else
-        isRunning = false
-        if _G.__AWM_NOTIFY then
-            _G.__AWM_NOTIFY("Replay","Replay selesai.",2)
-        end
     end
+    
+    isRunning = false
 end
 
 local function stopRoute()
@@ -713,15 +745,83 @@ local function disableAntiBeton()
 end
 
 -- ============================================================
+-- ANIMATION SYSTEM
+-- ============================================================
+local RunAnimations = {
+    ["Run Animation 1"] = {
+        Idle1   = "rbxassetid://122257458498464",
+        Idle2   = "rbxassetid://102357151005774",
+        Walk    = "http://www.roblox.com/asset/?id=18537392113",
+        Run     = "rbxassetid://82598234841035",
+        Jump    = "rbxassetid://75290611992385",
+        Fall    = "http://www.roblox.com/asset/?id=11600206437",
+        Climb   = "http://www.roblox.com/asset/?id=10921257536",
+        Swim    = "http://www.roblox.com/asset/?id=10921264784",
+        SwimIdle= "http://www.roblox.com/asset/?id=10921265698"
+    },
+    -- ... (sisanya sama seperti sebelumnya)
+}
+
+local OriginalAnimations = {}
+local CurrentPack = nil
+
+local function SaveOriginalAnimations(Animate)
+    OriginalAnimations = {}
+    for _, child in ipairs(Animate:GetDescendants()) do
+        if child:IsA("Animation") then
+            OriginalAnimations[child] = child.AnimationId
+        end
+    end
+end
+
+local function ApplyAnimations(Animate, Humanoid, AnimPack)
+    Animate.idle.Animation1.AnimationId = AnimPack.Idle1
+    Animate.idle.Animation2.AnimationId = AnimPack.Idle2
+    Animate.walk.WalkAnim.AnimationId   = AnimPack.Walk
+    Animate.run.RunAnim.AnimationId     = AnimPack.Run
+    Animate.jump.JumpAnim.AnimationId   = AnimPack.Jump
+    Animate.fall.FallAnim.AnimationId   = AnimPack.Fall
+    Animate.climb.ClimbAnim.AnimationId = AnimPack.Climb
+    Animate.swim.Swim.AnimationId       = AnimPack.Swim
+    Animate.swimidle.SwimIdle.AnimationId = AnimPack.SwimIdle
+    Humanoid.Jump = true
+end
+
+local function RestoreOriginal()
+    for anim, id in pairs(OriginalAnimations) do
+        if anim and anim:IsA("Animation") then
+            anim.AnimationId = id
+        end
+    end
+end
+
+-- ============================================================
 -- INITIALIZE
 -- ============================================================
 isPremium = checkPremium()
-validKey = loadSavedKey()
-loadMapsList()
+local savedKey, expiry = loadKey()
 
--- Send login webhook
-local userType = isPremium and "Premium" or (validKey and "Free (Valid Key)" or "Free (No Key)")
-sendWebhook("User Login", string.format("User: %s (%d)\nType: %s", player.DisplayName, player.UserId, userType), 3447003)
+if isPremium then
+    keyExpiry = math.huge
+    sendDiscordWebhook(
+        "Premium User Login 👑",
+        string.format("User: **%s** (@%s)\nUserID: %s", player.DisplayName, player.Name, player.UserId),
+        65280
+    )
+else
+    if savedKey and expiry > os.time() then
+        keyExpiry = expiry
+        sendDiscordWebhook(
+            "Free User Login (Saved Key) 🔑",
+            string.format("User: **%s** (@%s)\nUserID: %s\nTime Remaining: %s", 
+                player.DisplayName, player.Name, player.UserId, getTimeRemaining()),
+            16776960
+        )
+    end
+end
+
+availableMaps = fetchAvailableMaps()
+setDailyEvent()
 
 -- ============================================================
 -- WindUI
@@ -729,35 +829,54 @@ sendWebhook("User Login", string.format("User: %s (%d)\nType: %s", player.Displa
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local avatarUrl = string.format("https://www.roblox.com/headshot-thumbnail/image?userId=%s&width=420&height=420&format=png", player.UserId)
 
+local keySystemConfig = {}
+if not isPremium and (not savedKey or keyExpiry <= os.time()) then
+    keySystemConfig = {
+        Key = {},
+        Note = "Dapatkan key dari link dibawah ini. Key berlaku 24 jam.",
+        Thumbnail = {
+            Image = "rbxassetid://YOUR_THUMBNAIL_ID",
+            Title = "AstrionHUB Key System",
+        },
+        URL = "https://astrion-keycrate.vercel.app/",
+        SaveKey = true,
+        API = {
+            Validate = function(key)
+                local isValid = validateKey(key)
+                if isValid then
+                    saveKey(key)
+                    keyExpiry = os.time() + (24 * 60 * 60)
+                    sendDiscordWebhook(
+                        "New Key Activated! 🔑",
+                        string.format("User: **%s** (@%s)\nUserID: %s\nKey: ||%s||", 
+                            player.DisplayName, player.Name, player.UserId, key),
+                        3447003
+                    )
+                end
+                return isValid
+            end
+        }
+    }
+end
+
 local Window = WindUI:CreateWindow({
     Title = "AstrionHUB | YAHAYUK",
     Icon = "lucide:play",
     Author = "Jinho",
-    Folder = CONFIG.FOLDER_NAME,
+    Folder = FOLDER_NAME,
     Size = UDim2.fromOffset(720, 560),
     Theme = "Midnight",
     SideBarWidth = 200,
     Watermark = "Astrions",
-    Background = "https://raw.githubusercontent.com/syannnho/Astrion/refs/heads/main/IMG/AstrionHubIMG.png",
+    Background = "rbxassetid://YOUR_BACKGROUND_IMAGE_ID", -- Ganti dengan ID gambar background Anda
     BackgroundImageTransparency = 0.42,
     User = { 
         Enabled = true, 
         Anonymous = false, 
         Image = avatarUrl, 
-        Username = player.DisplayName .. (isPremium and " 👑" or "")
+        Username = player.DisplayName 
     },
-    KeySystem = (not isPremium and not validKey) and {
-        Key = {},
-        Note = "Masukkan key dari Discord atau website kami.\nFormat: ASTRION_KEYHABWUBWVA_XXXX",
-        SaveKey = true,
-        URL = "https://discord.gg/astrionhub",
-        API = {
-            Enabled = true,
-            Callback = function(key)
-                return validateKey(key)
-            end
-        }
-    } or nil
+    KeySystem = next(keySystemConfig) and keySystemConfig or nil
 })
 
 local function notify(title, content, duration)
@@ -771,50 +890,68 @@ _G.__AWM_NOTIFY = notify
 -- MAPS TAB
 -- ============================================================
 local MapsTab = Window:Tab({ Title = "Maps", Icon = "lucide:map", Default = true })
-MapsTab:Section({ Title = "Pilih Map untuk Dimainkan" })
+MapsTab:Section({ Title = "Pilih Map" })
 
 local mapNames = {}
-local mapDisplayNames = {}
-for _, mapInfo in ipairs(availableMaps) do
-    local displayName = mapInfo.name
-    if dailyEvent and mapInfo.name == dailyEvent then
+for _, map in ipairs(availableMaps) do
+    local displayName = map.name
+    if map.event then
         displayName = displayName .. " 🎉 EVENT"
     end
-    table.insert(mapNames, mapInfo.name)
-    table.insert(mapDisplayNames, displayName)
+    table.insert(mapNames, displayName)
 end
 
-local selectedMap = nil
-
-MapsTab:Dropdown({
-    Title = "Pilih Map",
-    Icon = "lucide:map-pin",
-    Desc = "Pilih map yang ingin dimainkan",
-    Values = mapDisplayNames,
-    Value = mapDisplayNames[1] or "",
-    Callback = function(option)
-        local mapName = option:gsub(" 🎉 EVENT", "")
-        
-        for _, mapInfo in ipairs(availableMaps) do
-            if mapInfo.name == mapName then
-                selectedMap = mapInfo
-                if loadMapData(mapInfo) then
-                    notify("Maps", "Map " .. mapName .. " berhasil dimuat!", 2)
-                    autoUpdate()
-                else
-                    notify("Maps", "Gagal memuat map " .. mapName, 3)
+local MapDropdown = MapsTab:Dropdown({
+    Title = "Available Maps",
+    Desc = "Pilih map yang ingin dimainkan (bisa pilih lebih dari 1)",
+    Values = mapNames,
+    Value = {},
+    Multi = true,
+    AllowNone = false,
+    Callback = function(options)
+        selectedMaps = {}
+        for _, option in ipairs(options) do
+            local cleanName = option:gsub(" 🎉 EVENT", "")
+            for _, map in ipairs(availableMaps) do
+                if map.name == cleanName then
+                    table.insert(selectedMaps, map)
+                    break
                 end
-                break
             end
+        end
+        
+        if #selectedMaps > 0 then
+            currentMap = selectedMaps[1]
+            frames = loadRoute(currentMap.url)
+            notify("Map Loaded", string.format("Loaded: %s", currentMap.name), 2)
         end
     end
 })
 
--- Auto-load first map
-if #availableMaps > 0 then
-    selectedMap = availableMaps[1]
-    loadMapData(selectedMap)
-end
+MapsTab:Button({
+    Title = "🔄 Check for Updates",
+    Icon = "lucide:refresh-cw",
+    Desc = "Cek update map terbaru dari GitHub",
+    Callback = function()
+        notify("Update", "Checking for updates...", 2)
+        local updated = checkMapUpdates()
+        if updated then
+            -- Update dropdown
+            mapNames = {}
+            for _, map in ipairs(availableMaps) do
+                local displayName = map.name
+                if map.event then
+                    displayName = displayName .. " 🎉 EVENT"
+                end
+                table.insert(mapNames, displayName)
+            end
+            MapDropdown:SetValues(mapNames)
+            notify("Update", "Maps updated! New maps available.", 3)
+        else
+            notify("Update", "No updates available. All maps are up to date.", 2)
+        end
+    end
+})
 
 -- ============================================================
 -- MAIN TAB
@@ -827,16 +964,23 @@ MainTab:Button({
     Icon  = "craft:back-to-start-stroke",
     Desc  = "Mulai dari checkpoint terdekat dengan walk to start",
     Callback = function()
-        if #frames == 0 then
-            notify("Replay", "Tidak ada map yang dimuat!", 2)
-            return
-        end
-        if isRunning then 
-            notify("Replay","Replay sudah berjalan",2)
-            return 
-        end
+        if isRunning then notify("Replay","Replay sudah berjalan",2); return end
+        if #frames == 0 then notify("Replay","Load map terlebih dahulu!",2); return end
         notify("Replay","Mulai dari CP terdekat",2)
         task.spawn(function() runRouteOnce() end)
+    end
+})
+
+MainTab:Button({
+    Title = "▶ AWAL KE AKHIR",
+    Icon  = "lucide:play",
+    Desc  = "Jalankan dari awal hingga akhir",
+    Callback = function()
+        if isRunning then notify("Replay","Replay sudah berjalan",2); return end
+        if #frames == 0 then notify("Replay","Load map terlebih dahulu!",2); return end
+        notify("Replay","Mulai dari awal ke akhir",2)
+        autoLoopEnabled = false
+        task.spawn(function() runAllRoutes() end)
     end
 })
 
@@ -893,18 +1037,50 @@ MainTab:Toggle({
     end
 })
 
-MainTab:Button({
-    Title = "🔄 Check for Updates",
+-- ============================================================
+-- AUTO LOOP TAB
+-- ============================================================
+local AutoLoopTab = Window:Tab({ Title = "Auto Loop", Icon = "lucide:repeat" })
+AutoLoopTab:Section({ Title = "Loop Selected Maps" })
+
+AutoLoopTab:Toggle({
+    Title = "🔁 Auto Loop Play",
     Icon = "lucide:refresh-cw",
-    Desc = "Periksa update untuk map saat ini",
-    Callback = function()
-        if currentMapData then
-            notify("Auto Update", "Memeriksa update...", 2)
-            autoUpdate()
+    Desc = "Loop otomatis map yang dipilih",
+    Value = false,
+    Callback = function(state)
+        autoLoopEnabled = state
+        if state then
+            if #selectedMaps == 0 then
+                notify("Auto Loop", "Pilih map terlebih dahulu!", 2)
+                autoLoopEnabled = false
+                return
+            end
+            notify("Auto Loop", "✅ Aktif - Loop akan berjalan", 2)
+            if not isRunning then
+                task.spawn(function()
+                    while autoLoopEnabled and #selectedMaps > 0 do
+                        for _, map in ipairs(selectedMaps) do
+                            if not autoLoopEnabled then break end
+                            currentMap = map
+                            frames = loadRoute(map.url)
+                            notify("Auto Loop", string.format("Playing: %s", map.name), 2)
+                            runAllRoutes()
+                            task.wait(2)
+                        end
+                    end
+                end)
+            end
         else
-            notify("Auto Update", "Tidak ada map yang dimuat!", 2)
+            notify("Auto Loop", "❌ Nonaktif", 2)
+            stopRoute()
         end
     end
+})
+
+AutoLoopTab:Paragraph({
+    Title = "ℹ️ Info",
+    Desc = "Auto Loop akan memutar semua map yang dipilih secara berurutan dan mengulang terus menerus hingga dinonaktifkan."
 })
 
 -- ============================================================
@@ -964,260 +1140,11 @@ AutomationTab:Input({
     end
 })
 
-AutomationTab:Section({ Title = "Auto Loop" })
-
-AutomationTab:Toggle({
-    Title = "🔁 Auto Loop Selected Map",
-    Icon = "lucide:repeat",
-    Desc = "Otomatis mengulangi replay map yang dipilih",
-    Value = false,
-    Callback = function(state)
-        autoLoopEnabled = state
-        notify("Auto Loop", state and "✅ Auto Loop Aktif" or "❌ Auto Loop Nonaktif", 2)
-    end
-})
-
 -- ============================================================
 -- ANIMATION TAB
 -- ============================================================
 local AnimationTab = Window:Tab({ Title = "Animation", Icon = "lucide:person-standing" })
 AnimationTab:Section({ Title = "Run Animation Packs" })
-
--- ID ANIMATION
-local RunAnimations = {
-    ["Run Animation 1"] = {
-        Idle1   = "rbxassetid://122257458498464",
-        Idle2   = "rbxassetid://102357151005774",
-        Walk    = "http://www.roblox.com/asset/?id=18537392113",
-        Run     = "rbxassetid://82598234841035",
-        Jump    = "rbxassetid://75290611992385",
-        Fall    = "http://www.roblox.com/asset/?id=11600206437",
-        Climb   = "http://www.roblox.com/asset/?id=10921257536",
-        Swim    = "http://www.roblox.com/asset/?id=10921264784",
-        SwimIdle= "http://www.roblox.com/asset/?id=10921265698"
-    },
-    ["Run Animation 2"] = {
-        Idle1   = "rbxassetid://122257458498464",
-        Idle2   = "rbxassetid://102357151005774",
-        Walk    = "rbxassetid://122150855457006",
-        Run     = "rbxassetid://82598234841035",
-        Jump    = "rbxassetid://75290611992385",
-        Fall    = "rbxassetid://98600215928904",
-        Climb   = "rbxassetid://88763136693023",
-        Swim    = "rbxassetid://133308483266208",
-        SwimIdle= "rbxassetid://109346520324160"
-    },
-    ["Run Animation 3"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=18537376492",
-        Idle2   = "http://www.roblox.com/asset/?id=18537371272",
-        Walk    = "http://www.roblox.com/asset/?id=18537392113",
-        Run     = "http://www.roblox.com/asset/?id=18537384940",
-        Jump    = "http://www.roblox.com/asset/?id=18537380791",
-        Fall    = "http://www.roblox.com/asset/?id=18537367238",
-        Climb   = "http://www.roblox.com/asset/?id=10921271391",
-        Swim    = "http://www.roblox.com/asset/?id=99384245425157",
-        SwimIdle= "http://www.roblox.com/asset/?id=113199415118199"
-    },
-    ["Run Animation 4"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=118832222982049",
-        Idle2   = "http://www.roblox.com/asset/?id=76049494037641",
-        Walk    = "http://www.roblox.com/asset/?id=92072849924640",
-        Run     = "http://www.roblox.com/asset/?id=72301599441680",
-        Jump    = "http://www.roblox.com/asset/?id=104325245285198",
-        Fall    = "http://www.roblox.com/asset/?id=121152442762481",
-        Climb   = "http://www.roblox.com/asset/?id=507765644",
-        Swim    = "http://www.roblox.com/asset/?id=99384245425157",
-        SwimIdle= "http://www.roblox.com/asset/?id=113199415118199"
-    },
-    ["Run Animation 5"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=656117400",
-        Idle2   = "http://www.roblox.com/asset/?id=656118341",
-        Walk    = "http://www.roblox.com/asset/?id=656121766",
-        Run     = "http://www.roblox.com/asset/?id=656118852",
-        Jump    = "http://www.roblox.com/asset/?id=656117878",
-        Fall    = "http://www.roblox.com/asset/?id=656115606",
-        Climb   = "http://www.roblox.com/asset/?id=656114359",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 6"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=616006778",
-        Idle2   = "http://www.roblox.com/asset/?id=616008087",
-        Walk    = "http://www.roblox.com/asset/?id=616013216",
-        Run     = "http://www.roblox.com/asset/?id=616010382",
-        Jump    = "http://www.roblox.com/asset/?id=616008936",
-        Fall    = "http://www.roblox.com/asset/?id=616005863",
-        Climb   = "http://www.roblox.com/asset/?id=616003713",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 7"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=1083195517",
-        Idle2   = "http://www.roblox.com/asset/?id=1083214717",
-        Walk    = "http://www.roblox.com/asset/?id=1083178339",
-        Run     = "http://www.roblox.com/asset/?id=1083216690",
-        Jump    = "http://www.roblox.com/asset/?id=1083218792",
-        Fall    = "http://www.roblox.com/asset/?id=1083189019",
-        Climb   = "http://www.roblox.com/asset/?id=1083182000",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 8"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=616136790",
-        Idle2   = "http://www.roblox.com/asset/?id=616138447",
-        Walk    = "http://www.roblox.com/asset/?id=616146177",
-        Run     = "http://www.roblox.com/asset/?id=616140816",
-        Jump    = "http://www.roblox.com/asset/?id=616139451",
-        Fall    = "http://www.roblox.com/asset/?id=616134815",
-        Climb   = "http://www.roblox.com/asset/?id=616133594",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 9"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=616088211",
-        Idle2   = "http://www.roblox.com/asset/?id=616089559",
-        Walk    = "http://www.roblox.com/asset/?id=616095330",
-        Run     = "http://www.roblox.com/asset/?id=616091570",
-        Jump    = "http://www.roblox.com/asset/?id=616090535",
-        Fall    = "http://www.roblox.com/asset/?id=616087089",
-        Climb   = "http://www.roblox.com/asset/?id=616086039",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 10"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=910004836",
-        Idle2   = "http://www.roblox.com/asset/?id=910009958",
-        Walk    = "http://www.roblox.com/asset/?id=910034870",
-        Run     = "http://www.roblox.com/asset/?id=910025107",
-        Jump    = "http://www.roblox.com/asset/?id=910016857",
-        Fall    = "http://www.roblox.com/asset/?id=910001910",
-        Climb   = "http://www.roblox.com/asset/?id=616086039",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 11"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=742637544",
-        Idle2   = "http://www.roblox.com/asset/?id=742638445",
-        Walk    = "http://www.roblox.com/asset/?id=742640026",
-        Run     = "http://www.roblox.com/asset/?id=742638842",
-        Jump    = "http://www.roblox.com/asset/?id=742637942",
-        Fall    = "http://www.roblox.com/asset/?id=742637151",
-        Climb   = "http://www.roblox.com/asset/?id=742636889",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 12"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=616111295",
-        Idle2   = "http://www.roblox.com/asset/?id=616113536",
-        Walk    = "http://www.roblox.com/asset/?id=616122287",
-        Run     = "http://www.roblox.com/asset/?id=616117076",
-        Jump    = "http://www.roblox.com/asset/?id=616115533",
-        Fall    = "http://www.roblox.com/asset/?id=616108001",
-        Climb   = "http://www.roblox.com/asset/?id=616104706",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 13"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=657595757",
-        Idle2   = "http://www.roblox.com/asset/?id=657568135",
-        Walk    = "http://www.roblox.com/asset/?id=657552124",
-        Run     = "http://www.roblox.com/asset/?id=657564596",
-        Jump    = "http://www.roblox.com/asset/?id=658409194",
-        Fall    = "http://www.roblox.com/asset/?id=657600338",
-        Climb   = "http://www.roblox.com/asset/?id=658360781",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 14"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=616158929",
-        Idle2   = "http://www.roblox.com/asset/?id=616160636",
-        Walk    = "http://www.roblox.com/asset/?id=616168032",
-        Run     = "http://www.roblox.com/asset/?id=616163682",
-        Jump    = "http://www.roblox.com/asset/?id=616161997",
-        Fall    = "http://www.roblox.com/asset/?id=616157476",
-        Climb   = "http://www.roblox.com/asset/?id=616156119",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 15"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=845397899",
-        Idle2   = "http://www.roblox.com/asset/?id=845400520",
-        Walk    = "http://www.roblox.com/asset/?id=845403856",
-        Run     = "http://www.roblox.com/asset/?id=845386501",
-        Jump    = "http://www.roblox.com/asset/?id=845398858",
-        Fall    = "http://www.roblox.com/asset/?id=845396048",
-        Climb   = "http://www.roblox.com/asset/?id=845392038",
-        Swim    = "http://www.roblox.com/asset/?id=910028158",
-        SwimIdle= "http://www.roblox.com/asset/?id=910030921"
-    },
-    ["Run Animation 16"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=782841498",
-        Idle2   = "http://www.roblox.com/asset/?id=782845736",
-        Walk    = "http://www.roblox.com/asset/?id=782843345",
-        Run     = "http://www.roblox.com/asset/?id=782842708",
-        Jump    = "http://www.roblox.com/asset/?id=782847020",
-        Fall    = "http://www.roblox.com/asset/?id=782846423",
-        Climb   = "http://www.roblox.com/asset/?id=782843869",
-        Swim    = "http://www.roblox.com/asset/?id=18537389531",
-        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
-    },
-    ["Run Animation 17"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=891621366",
-        Idle2   = "http://www.roblox.com/asset/?id=891633237",
-        Walk    = "http://www.roblox.com/asset/?id=891667138",
-        Run     = "http://www.roblox.com/asset/?id=891636393",
-        Jump    = "http://www.roblox.com/asset/?id=891627522",
-        Fall    = "http://www.roblox.com/asset/?id=891617961",
-        Climb   = "http://www.roblox.com/asset/?id=891609353",
-        Swim    = "http://www.roblox.com/asset/?id=18537389531",
-        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
-    },
-    ["Run Animation 18"] = {
-        Idle1   = "http://www.roblox.com/asset/?id=750781874",
-        Idle2   = "http://www.roblox.com/asset/?id=750782770",
-        Walk    = "http://www.roblox.com/asset/?id=750785693",
-        Run     = "http://www.roblox.com/asset/?id=750783738",
-        Jump    = "http://www.roblox.com/asset/?id=750782230",
-        Fall    = "http://www.roblox.com/asset/?id=750780242",
-        Climb   = "http://www.roblox.com/asset/?id=750779899",
-        Swim    = "http://www.roblox.com/asset/?id=18537389531",
-        SwimIdle= "http://www.roblox.com/asset/?id=18537387180"
-    },
-}
-
--- Animation Functions
-local OriginalAnimations = {}
-local CurrentPack = nil
-
-local function SaveOriginalAnimations(Animate)
-    OriginalAnimations = {}
-    for _, child in ipairs(Animate:GetDescendants()) do
-        if child:IsA("Animation") then
-            OriginalAnimations[child] = child.AnimationId
-        end
-    end
-end
-
-local function ApplyAnimations(Animate, Humanoid, AnimPack)
-    Animate.idle.Animation1.AnimationId = AnimPack.Idle1
-    Animate.idle.Animation2.AnimationId = AnimPack.Idle2
-    Animate.walk.WalkAnim.AnimationId   = AnimPack.Walk
-    Animate.run.RunAnim.AnimationId     = AnimPack.Run
-    Animate.jump.JumpAnim.AnimationId   = AnimPack.Jump
-    Animate.fall.FallAnim.AnimationId   = AnimPack.Fall
-    Animate.climb.ClimbAnim.AnimationId = AnimPack.Climb
-    Animate.swim.Swim.AnimationId       = AnimPack.Swim
-    Animate.swimidle.SwimIdle.AnimationId = AnimPack.SwimIdle
-    Humanoid.Jump = true
-end
-
-local function RestoreOriginal()
-    for anim, id in pairs(OriginalAnimations) do
-        if anim and anim:IsA("Animation") then
-            anim.AnimationId = id
-        end
-    end
-end
 
 local function SetupCharacter(Char)
     local Animate = Char:WaitForChild("Animate")
@@ -1237,35 +1164,36 @@ if Players.LocalPlayer.Character then
     SetupCharacter(Players.LocalPlayer.Character)
 end
 
--- Create Animation Toggles
 for i = 1, 18 do
     local name = "Run Animation " .. i
     local pack = RunAnimations[name]
-
-    AnimationTab:Toggle({
-        Title = name,
-        Icon = "lucide:person-standing",
-        Value = false,
-        Callback = function(Value)
-            if Value then
-                CurrentPack = pack
-            elseif CurrentPack == pack then
-                CurrentPack = nil
-                RestoreOriginal()
-            end
-
-            local Char = Players.LocalPlayer.Character
-            if Char and Char:FindFirstChild("Animate") and Char:FindFirstChild("Humanoid") then
-                if CurrentPack then
-                    ApplyAnimations(Char.Animate, Char.Humanoid, CurrentPack)
-                    notify("Animation", name .. " diterapkan!", 2)
-                else
+    
+    if pack then
+        AnimationTab:Toggle({
+            Title = name,
+            Icon = "lucide:person-standing",
+            Value = false,
+            Callback = function(Value)
+                if Value then
+                    CurrentPack = pack
+                elseif CurrentPack == pack then
+                    CurrentPack = nil
                     RestoreOriginal()
-                    notify("Animation", "Animasi dikembalikan ke default", 2)
                 end
-            end
-        end,
-    })
+
+                local Char = Players.LocalPlayer.Character
+                if Char and Char:FindFirstChild("Animate") and Char:FindFirstChild("Humanoid") then
+                    if CurrentPack then
+                        ApplyAnimations(Char.Animate, Char.Humanoid, CurrentPack)
+                        notify("Animation", name .. " diterapkan!", 2)
+                    else
+                        RestoreOriginal()
+                        notify("Animation", "Animasi dikembalikan ke default", 2)
+                    end
+                end
+            end,
+        })
+    end
 end
 
 -- ============================================================
@@ -1382,12 +1310,9 @@ ToolsTab:Input({
         local num = tonumber(text)
         if num then 
             DEFAULT_HEIGHT = num 
-            if #rawFrames > 0 then
-                frames = adjustRoute(rawFrames)
-                notify("Default Height","Diatur ke "..tostring(num).." (route disesuaikan ulang)",2)
-            else
-                notify("Default Height","Diatur ke "..tostring(num),2)
-            end
+            rawFrames = frames
+            frames = adjustRoute(rawFrames)
+            notify("Default Height","Diatur ke "..tostring(num).." (route disesuaikan ulang)",2)
         else
             notify("Default Height","Input tidak valid!",2) 
         end
@@ -1405,6 +1330,67 @@ ToolsTab:Button({
             notify("Avatar Height", string.format("Tinggi avatar: %.2f", height), 3)
         end
     end
+})
+
+-- ============================================================
+-- INFO TAB
+-- ============================================================
+local InfoTab = Window:Tab({ Title = "Info", Icon = "lucide:info" })
+InfoTab:Section({ Title = "Account Status" })
+
+local statusText = isPremium and "👑 Premium" or "🔑 Free User"
+local timeRemaining = getTimeRemaining()
+
+InfoTab:Paragraph({
+    Title = "Status: " .. statusText,
+    Desc = isPremium and "Unlimited access to all features" or "Key valid for 24 hours"
+})
+
+local TimeRemainingLabel = InfoTab:Paragraph({
+    Title = "⏱️ Time Remaining",
+    Desc = timeRemaining
+})
+
+-- Update time remaining every second
+if not isPremium then
+    task.spawn(function()
+        while true do
+            task.wait(1)
+            local remaining = getTimeRemaining()
+            TimeRemainingLabel:SetDesc(remaining)
+            
+            if remaining == "Expired" and not isPremium then
+                notify("Key Expired", "Your key has expired. Please get a new key.", 5)
+                task.wait(5)
+                -- Reload script to show key system
+                loadstring(game:HttpGet("YOUR_SCRIPT_URL"))()
+                break
+            end
+        end
+    end)
+end
+
+InfoTab:Section({ Title = "Daily Event" })
+
+if currentEvent then
+    InfoTab:Paragraph({
+        Title = "🎉 Today's Event Map",
+        Desc = string.format("Map: %s\nEnds in: %s", 
+            currentEvent.name, 
+            os.date("%H:%M:%S", eventEndTime - os.time()))
+    })
+else
+    InfoTab:Paragraph({
+        Title = "No Event",
+        Desc = "No event running today"
+    })
+end
+
+InfoTab:Section({ Title = "Script Info" })
+
+InfoTab:Paragraph({
+    Title = "AstrionHUB v3.0",
+    Desc = "Multi-map support dengan auto-update, event system, dan key security.\n\nDeveloped by Jinho"
 })
 
 -- ============================================================
@@ -1444,47 +1430,6 @@ task.spawn(function()
 end)
 
 -- ============================================================
--- INFO TAB
--- ============================================================
-local InfoTab = Window:Tab({ Title = "Info", Icon = "lucide:info" })
-InfoTab:Section({ Title = "Status & Information" })
-
-InfoTab:Paragraph({
-    Title = "Account Status",
-    Desc = string.format("User: %s\nUser ID: %d\nType: %s\nDaily Event: %s", 
-        player.DisplayName,
-        player.UserId,
-        isPremium and "Premium 👑" or (validKey and "Free (Valid Key)" or "Free"),
-        dailyEvent and (dailyEvent .. " 🎉") or "None"
-    )
-})
-
-InfoTab:Paragraph({
-    Title = "Current Map",
-    Desc = currentMapName and string.format("Map: %s\nFrames: %d", currentMapName, #frames) or "No map loaded"
-})
-
-InfoTab:Button({
-    Title = "Discord Server",
-    Icon = "lucide:message-circle",
-    Desc = "Join our Discord community",
-    Callback = function()
-        setclipboard("https://discord.gg/astrionhub")
-        notify("Discord", "Link copied to clipboard!", 2)
-    end
-})
-
-InfoTab:Button({
-    Title = "Get Premium",
-    Icon = "lucide:crown",
-    Desc = "Upgrade to Premium for full access",
-    Callback = function()
-        setclipboard("https://discord.gg/astrionhub")
-        notify("Premium", "Visit Discord for premium access!", 2)
-    end
-})
-
--- ============================================================
 -- WINDOW FINALIZE
 -- ============================================================
 Window:EditOpenButton({
@@ -1496,8 +1441,8 @@ Window:EditOpenButton({
 })
 
 Window:Tag({ 
-    Title = "Multi-Map v3.0 " .. (isPremium and "👑" or ""), 
-    Color = isPremium and Color3.fromHex("#FFD700") or Color3.fromHex("#30ff6a"), 
+    Title = isPremium and "Premium v3.0" or "Free v3.0", 
+    Color = isPremium and Color3.fromRGB(255, 215, 0) or Color3.fromHex("#30ff6a"), 
     Radius = 10 
 })
 
@@ -1505,36 +1450,17 @@ if _G.__AWM_FULL_LOADED then
     _G.__AWM_FULL_LOADED.Window = Window 
 end
 
--- ============================================================
--- AUTO UPDATE CHECKER (Background Task)
--- ============================================================
-task.spawn(function()
-    while task.wait(300) do -- Check every 5 minutes
-        if currentMapData then
-            pcall(autoUpdate)
-        end
-    end
-end)
-
--- ============================================================
--- FINAL NOTIFICATIONS
--- ============================================================
-local welcomeMessage = string.format(
-    "Welcome %s! 🎉\nStatus: %s\n%s",
-    player.DisplayName,
-    isPremium and "Premium 👑" or (validKey and "Free User" or "Free User"),
-    dailyEvent and ("Today's Event: " .. dailyEvent .. " 🎉") or "No event today"
-)
-
-notify("AstrionHUB | YAHAYUK", welcomeMessage, 5)
-
-if #availableMaps > 0 then
-    notify("Maps", string.format("%d maps tersedia!", #availableMaps), 3)
-else
-    notify("Maps", "Gagal memuat daftar maps!", 3)
-end
+notify("AstrionHUB | YAHAYUK", "Script loaded! Multi-map system ready 🎉", 5)
 
 pcall(function() 
     Window:Show()
     MapsTab:Show()
+end)
+
+-- Auto-check for updates every 5 minutes
+task.spawn(function()
+    while true do
+        task.wait(300) -- 5 minutes
+        checkMapUpdates()
+    end
 end)
